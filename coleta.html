@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Coleta — Alex Transportes</title>
+  <!-- `config.js` só existe depois que o projeto online for ativado. Sem ele a
+       página abre em demonstração e avisa, em cima de tudo, que nada é gravado. -->
+  <script src="config.js" onerror="window.SIGN_CONFIG=window.SIGN_CONFIG||null"></script>
+  <style>
+    /* ====================================================================
+       Tela do coletador — celular na mão, muitas vezes no sol, com pressa.
+       Mesma identidade verde clara do sistema (as cores nascem em :root,
+       iguais às do styles.css e do sign.html).
+
+       Regras desta tela:
+         - cabe em 390px de largura sem rolagem lateral;
+         - botão de ação tem no mínimo 56px de altura e texto de 17px;
+         - primeiro o endereço e o mapa, depois a mercadoria, por último a
+           assinatura: é essa a ordem em que a pessoa usa;
+         - todo par texto/fundo tem no mínimo 4,5:1.
+       ==================================================================== */
+    :root{
+      --ink:#17252F; --ink-soft:#4A5C68; --ink-faint:#5E7080;
+      --paper:#EDF6EF; --surface:#FFFFFF; --surface-soft:#F5FBF6; --surface-green:#DFEFE4;
+      --line:#CBE0D1; --line-soft:#DEEAE1; --field-line:#6E9380;
+      --brand:#13462F; --action:#1B6B45; --action-hover:#145636; --on-action:#FFFFFF;
+      --positive:#146B43; --warn:#8A4A00; --warn-bg:#FDF2E0; --warn-line:#E3B778; --danger:#B3261E;
+      --focus:#2E8B60; --radius:14px;
+      --shadow:0 1px 2px rgba(19,70,47,.05),0 6px 18px rgba(19,70,47,.06);
+      font-family:Arial,Helvetica,sans-serif; color:var(--ink); background:var(--paper);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.45}
+    .page{max-width:620px;margin:auto;padding:16px 16px 48px}
+    .brand{font-size:12px;font-weight:700;letter-spacing:.8px;color:var(--brand)}
+    h1{font-size:23px;margin:6px 0 2px;line-height:1.25}
+    h2{font-size:16px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft)}
+    p{margin:6px 0;color:var(--ink-soft)}
+    .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px;box-shadow:var(--shadow)}
+    .demo{background:var(--warn-bg);border:2px solid var(--warn);color:var(--warn);font-weight:700;border-radius:var(--radius);padding:12px 14px;margin-top:12px}
+    .demo span{display:block;font-weight:400;color:var(--warn);margin-top:4px;font-size:14px}
+    .direto{background:var(--surface-green);border:2px solid var(--action);color:var(--brand);font-weight:700;border-radius:var(--radius);padding:12px 14px;margin-top:12px}
+    .direto span{display:block;font-weight:400;color:var(--ink);margin-top:4px;font-size:14px}
+    .comprovante{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px;display:block}
+    .status{display:inline-block;background:var(--surface-green);color:var(--brand);border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px}
+    .route{font-size:20px;font-weight:700;color:var(--ink);margin:0}
+    .to{font-size:15px;color:var(--ink-soft);margin:2px 0 0}
+    .address{font-size:18px;font-weight:700;color:var(--ink);margin:0}
+    .item{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line-soft);padding:10px 0}
+    .item:first-child{border-top:0}
+    .item strong{white-space:nowrap}
+    .totals{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .totals div{flex:1 1 90px;background:var(--surface-soft);border:1px solid var(--line-soft);border-radius:10px;padding:8px 10px}
+    .totals span{display:block;font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.4px}
+    .totals b{font-size:18px}
+    .muted{font-size:14px;color:var(--ink-soft)}
+    button,.button{display:block;width:100%;min-height:56px;border:0;border-radius:12px;padding:15px;
+      font:700 17px Arial,Helvetica,sans-serif;background:var(--action);color:var(--on-action);
+      margin-top:12px;cursor:pointer;text-align:center;text-decoration:none}
+    button:hover,.button:hover{background:var(--action-hover)}
+    button:focus-visible,.button:focus-visible,input:focus-visible,canvas:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+    button[disabled]{background:#E7EDE9;color:var(--ink-faint);cursor:not-allowed}
+    .secondary{background:var(--surface-green);color:var(--brand)}
+    .secondary:hover{background:#CFE7D7}
+    .done{background:var(--surface-soft);color:var(--positive);border:2px solid var(--positive)}
+    label{display:grid;gap:6px;font-weight:700;font-size:15px;margin-top:8px}
+    input{width:100%;font:inherit;color:var(--ink);background:var(--surface);padding:14px;border:1px solid var(--field-line);border-radius:10px}
+    input:focus{border-color:var(--action);outline:3px solid var(--focus);outline-offset:2px}
+    .signature{width:100%;height:190px;border:2px dashed var(--field-line);border-radius:10px;background:var(--surface);touch-action:none;margin-top:10px;display:block}
+    .hidden{display:none!important}
+    .error{color:var(--danger);font-weight:700}
+    .ok{color:var(--positive);font-weight:700}
+    .feedback{margin-top:10px;font-weight:700}
+    @media (max-width:400px){ .page{padding:12px 12px 40px} h1{font-size:21px} }
+  </style>
+</head>
+<body><main class="page">
+  <div class="brand">ALEX TRANSPORTES</div>
+  <h1 id="title">Abrindo a coleta…</h1>
+  <p id="status">Aguarde um instante.</p>
+
+  <div class="demo hidden" id="demoBanner">DEMONSTRAÇÃO — nada aqui é gravado
+    <span>Esta tela serve para ver como o coletador vai usar o sistema. Os botões e a assinatura não salvam nada em lugar nenhum, porque a parte online ainda não foi configurada.</span></div>
+
+  <div class="direto hidden" id="diretoBanner">Coleta enviada pela transportadora
+    <span>Confira os dados, vá até o cliente e peça a assinatura. Depois de assinar, este celular monta o comprovante para você mandar pelo WhatsApp.</span></div>
+
+  <section class="card hidden" id="coleta">
+    <p class="status" id="statusBadge"></p>
+    <p class="route" id="route"></p>
+    <p class="to" id="destino"></p>
+    <p class="muted" id="reference"></p>
+  </section>
+
+  <section class="card hidden" id="enderecoCard">
+    <h2>Onde coletar</h2>
+    <p class="address" id="address"></p>
+    <p class="muted hidden" id="referencia"></p>
+    <p class="muted hidden" id="telefone"></p>
+    <a class="button hidden" id="mapa" href="#" target="_blank" rel="noopener noreferrer">Abrir localização no mapa</a>
+    <a class="button secondary hidden" id="ligar" href="#">Ligar para o cliente</a>
+  </section>
+
+  <section class="card hidden" id="mercadoria">
+    <h2>O que pegar</h2>
+    <div id="items"></div>
+    <div class="totals">
+      <div><span>Volumes</span><b id="volumes">0</b></div>
+      <div><span>Pares</span><b id="pares">0</b></div>
+      <div><span>Frete</span><b id="freight">—</b></div>
+    </div>
+    <p class="muted hidden" id="observation"></p>
+  </section>
+
+  <section class="card hidden" id="acoes">
+    <h2>O que fazer</h2>
+    <button type="button" id="iniciar">Iniciar coleta</button>
+    <button type="button" class="secondary" id="conferida">Marcar coleta conferida</button>
+    <button type="button" class="secondary" id="abrirAssinatura">Assinar com o dedo</button>
+    <p class="muted">Assina quem entrega a mercadoria no depósito. O carreteiro não precisa assinar.</p>
+    <p class="feedback" id="feedback"></p>
+  </section>
+
+  <section class="card hidden" id="assinaturaCard">
+    <h2>Assinatura</h2>
+    <label>Nome de quem está assinando<input id="signerName" autocomplete="name" placeholder="Ex.: Ronaldo"></label>
+    <canvas id="signature" class="signature" width="900" height="330" aria-label="Espaço para assinar com o dedo"></canvas>
+    <button type="button" class="secondary" id="limpar">Apagar e assinar de novo</button>
+    <button type="button" id="confirmar">Confirmar assinatura</button>
+    <p class="muted">A assinatura fica ligada a esta coleta, com nome, data e horário. É um comprovante da operação e não substitui documento fiscal.</p>
+  </section>
+
+  <section class="card hidden" id="comprovanteCard">
+    <h2>Comprovante</h2>
+    <p class="ok" id="comprovanteResumo"></p>
+    <img id="comprovanteImg" class="comprovante" alt="Comprovante da coleta assinado">
+    <button type="button" id="enviarCliente">Enviar comprovante ao cliente</button>
+    <button type="button" class="secondary" id="enviarTransportadora">Enviar comprovante à transportadora</button>
+    <p class="muted">O WhatsApp abre para você escolher a conversa. Se o celular não oferecer o WhatsApp, a imagem é baixada: anexe-a na conversa que abrir.</p>
+  </section>
+</main>
+<script>
+/* Tela do coletador. Três modos, e a diferença aparece na tela:
+     online         — fala com a Edge Function pelo link secreto;
+     link direto    — os dados vêm depois do "#coleta=" (que nunca é enviado a
+                      servidor nenhum); a assinatura vira um comprovante em
+                      imagem, guardado neste celular e enviado pelo WhatsApp;
+     demonstração   — mesmo transporte, depois do "#demo=", e nada é gravado. */
+const $=s=>document.querySelector(s);
+const config=window.SIGN_CONFIG||{};
+const token=new URLSearchParams(location.search).get('t');
+const link=lerLink(location.hash);
+const demo=link?.modo==='demo'?link.dados:null;
+const direto=link?.modo==='direto'?link.dados:null;
+const online=!!(token&&config.endpoint);
+let dados=null, assinando=false, drawing=false, currentStroke=null;
+const strokes=[];
+
+function lerLink(hash){
+  const valor=String(hash||'');
+  for(const [marca,modo] of [['#coleta=','direto'],['#demo=','demo']]){
+    if(!valor.startsWith(marca))continue;
+    try{
+      const p=JSON.parse(decodeURIComponent(valor.slice(marca.length)));
+      return p&&typeof p==='object'&&!Array.isArray(p)?{modo,dados:p}:null;
+    }catch{return null}
+  }
+  return null;
+}
+function money(v){return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)||0)}
+function texto(v){return String(v??'')}
+/* Texto que vira HTML passa por aqui antes. O conteúdo é da própria
+   transportadora, mas a regra vale para qualquer origem: dado nunca vira
+   marcação por acidente. */
+function esc(v){return texto(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function aviso(titulo,mensagem,classe=''){$('#title').textContent=titulo;$('#status').textContent=mensagem;$('#status').className=classe}
+function recado(mensagem,classe='ok'){$('#feedback').textContent=mensagem;$('#feedback').className=`feedback ${classe}`}
+
+/* O token vai no corpo do pedido, nunca no endereço: assim ele não aparece
+   em registro de servidor nem no histórico do celular. */
+async function chamar(payload){
+  const r=await fetch(config.endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,...payload})});
+  let d={};try{d=await r.json()}catch{}
+  return{ok:r.ok,status:r.status,data:d};
+}
+
+function mostrar(s){
+  dados=s;
+  $('#statusBadge').textContent=`Situação: ${texto(s.status||'planejada')}`;
+  $('#route').textContent=texto(s.sender)||'Cliente não informado';
+  $('#destino').textContent=`Entregar para: ${texto(s.recipient)||'—'}`;
+  const codigo=`Coleta #${String(s.collectionNumber??'—').padStart(4,'0')}`;
+  const data=s.date?` · ${new Date(`${s.date}T12:00:00`).toLocaleDateString('pt-BR')}`:'';
+  const notinha=s.noteNumber?` · Notinha ${texto(s.noteNumber)}`:'';
+  const parada=s.routeOrder?` · Parada ${s.routeOrder}`:'';
+  $('#reference').textContent=`${codigo}${data}${notinha}${parada}`;
+  $('#coleta').classList.remove('hidden');
+
+  if(s.address||s.mapLink||s.phone){
+    $('#address').textContent=texto(s.address)||'Endereço não cadastrado';
+    if(s.reference){$('#referencia').textContent=`Referência: ${texto(s.reference)}`;$('#referencia').classList.remove('hidden')}
+    if(s.phone){$('#telefone').textContent=`Telefone: ${texto(s.phone)}`;$('#telefone').classList.remove('hidden')}
+    const tel=texto(s.phone).replace(/\D/g,'');
+    if(tel.length>=8){$('#ligar').href=`tel:${tel}`;$('#ligar').classList.remove('hidden')}
+    if(s.mapLink&&/^https?:\/\//i.test(s.mapLink)){$('#mapa').href=s.mapLink;$('#mapa').classList.remove('hidden')}
+    $('#enderecoCard').classList.remove('hidden');
+  }
+
+  $('#items').innerHTML=(s.items||[]).map(i=>
+    `<div class="item"><span>${esc(i.qty)} ${esc(i.unit)} · ${esc(i.product)}${i.pairs?` · ${esc(i.pairs)} pares`:''}</span><strong>${esc(money(i.total))}</strong></div>`
+  ).join('')||'<p class="muted">Sem itens lançados.</p>';
+  $('#volumes').textContent=texto(s.volumes??0);
+  $('#pares').textContent=texto(s.pairs??0);
+  $('#freight').textContent=s.freight==='NS'?'Nova Serrana':'São Paulo';
+  if(s.observation){$('#observation').textContent=`Observação: ${texto(s.observation)}`;$('#observation').classList.remove('hidden')}
+  $('#mercadoria').classList.remove('hidden');
+  $('#acoes').classList.remove('hidden');
+  marcarBotoes();
+}
+/* Os botões mostram onde a coleta está: o que já foi feito fica marcado e
+   deixa de pedir toque. */
+function marcarBotoes(){
+  const s=texto(dados?.status||'planejada');
+  const iniciada=['em coleta','coletada','entregue'].includes(s);
+  const conferida=['coletada','entregue'].includes(s);
+  $('#iniciar').textContent=iniciada?'✓ Coleta iniciada':'Iniciar coleta';
+  $('#iniciar').className=iniciada?'done':'';
+  $('#iniciar').disabled=iniciada;
+  $('#conferida').textContent=conferida?'✓ Coleta conferida':'Marcar coleta conferida';
+  $('#conferida').className=conferida?'done':'secondary';
+  $('#conferida').disabled=conferida;
+  $('#statusBadge').textContent=`Situação: ${s}`;
+}
+
+async function passo(action,botao){
+  botao.disabled=true;
+  if(direto){
+    dados.status=action==='start'?'em coleta':'coletada';
+    guardarLocal({status:dados.status});
+    marcarBotoes();
+    recado(action==='start'?'Coleta iniciada (anotado neste celular).':'Coleta conferida (anotado neste celular).');
+    return;
+  }
+  if(demo){
+    dados.status=action==='start'?'em coleta':'coletada';
+    marcarBotoes();
+    recado('Demonstração: na versão online isto seria registrado com data e hora.','error');
+    return;
+  }
+  try{
+    const r=await chamar({action});
+    if(!r.ok)throw new Error(r.data.error||'Não foi possível registrar.');
+    dados.status=r.data.status||dados.status;
+    marcarBotoes();
+    recado(action==='start'?'Coleta iniciada. Pode carregar.':'Coleta conferida. Obrigado.');
+  }catch(err){
+    recado(err.message||'Sem conexão. Tente de novo.','error');
+    botao.disabled=false;
+  }
+}
+
+/* ------------------------------------------------------------- assinatura */
+const canvas=$('#signature'),ctx=canvas.getContext('2d');
+ctx.lineWidth=6;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#17252F';
+function ponto(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
+canvas.addEventListener('pointerdown',e=>{drawing=true;assinando=true;canvas.setPointerCapture(e.pointerId);const p=ponto(e);currentStroke=[p];strokes.push(currentStroke);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault()});
+canvas.addEventListener('pointermove',e=>{if(!drawing)return;const p=ponto(e);currentStroke.push(p);ctx.lineTo(p.x,p.y);ctx.stroke();e.preventDefault()});
+['pointerup','pointercancel'].forEach(n=>canvas.addEventListener(n,()=>{drawing=false;currentStroke=null}));
+$('#limpar').onclick=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);assinando=false;strokes.length=0};
+$('#abrirAssinatura').onclick=()=>{$('#assinaturaCard').classList.remove('hidden');$('#signerName').focus();$('#assinaturaCard').scrollIntoView({behavior:'smooth',block:'start'})};
+$('#iniciar').onclick=e=>passo('start',e.currentTarget);
+$('#conferida').onclick=e=>passo('checked',e.currentTarget);
+$('#confirmar').onclick=async e=>{
+  const nome=$('#signerName').value.trim();
+  if(nome.length<2||!assinando){recado('Escreva o nome e assine no quadro antes de confirmar.','error');return}
+  if(direto){
+    const assinadoEm=new Date();
+    const imagem=montarComprovante(dados,{nome,assinadoEm});
+    dados.status='coletada';
+    marcarBotoes();
+    guardarLocal({status:'coletada',nome,assinadoEm:assinadoEm.toISOString(),imagem});
+    mostrarComprovante({nome,assinadoEm,imagem});
+    return;
+  }
+  if(demo){
+    recado('Demonstração: a assinatura NÃO foi gravada. Para valer de verdade, é preciso configurar a parte online.','error');
+    return;
+  }
+  const botao=e.currentTarget;botao.disabled=true;botao.textContent='Salvando…';
+  try{
+    const r=await chamar({action:'sign',signerName:nome,signatureStrokes:strokes});
+    if(!r.ok)throw new Error(r.data.error||'Não foi possível salvar.');
+    $('#assinaturaCard').classList.add('hidden');
+    dados.status='coletada';marcarBotoes();
+    recado(`Assinatura confirmada. Obrigado, ${nome}.`);
+  }catch(err){
+    recado(err.message||'Não foi possível salvar. Tente novamente.','error');
+    botao.disabled=false;botao.textContent='Confirmar assinatura';
+  }
+};
+
+/* ------------------------------------------------ link direto: comprovante
+
+   Sem servidor, a prova da coleta é uma imagem com os dados da notinha, o
+   nome, a data, o horário e o traço da assinatura. Ela fica guardada neste
+   celular — fechar a página sem querer não perde a assinatura — e segue
+   pelo WhatsApp para o cliente e para a transportadora. */
+const chaveLocal=()=>`alex-coleta-${texto(dados?.collectionNumber)}-${texto(dados?.date)}-${texto(dados?.noteNumber)}`;
+function lerLocal(){try{return JSON.parse(localStorage.getItem(chaveLocal())||'{}')||{}}catch{return{}}}
+function guardarLocal(parcial){try{localStorage.setItem(chaveLocal(),JSON.stringify({...lerLocal(),...parcial}))}catch{}}
+const codigoColeta=s=>String(s?.collectionNumber??'').padStart(4,'0');
+const dataHora=d=>`${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`;
+
+function montarComprovante(s,{nome,assinadoEm}){
+  const W=1080,M=60,LINHA=46,itens=s.items||[];
+  const c=document.createElement('canvas');
+  c.width=W;c.height=1080+itens.length*LINHA;
+  const g=c.getContext('2d');
+  g.fillStyle='#FFFFFF';g.fillRect(0,0,W,c.height);
+  g.fillStyle='#13462F';g.fillRect(0,0,W,120);
+  g.fillStyle='#FFFFFF';g.font='bold 44px Arial';g.fillText('ALEX TRANSPORTES',M,78);
+  let y=190;
+  const escrever=(t,tam,peso,cor)=>{g.fillStyle=cor||'#17252F';g.font=`${peso||''} ${tam}px Arial`.trim();g.fillText(t,M,y);y+=tam+18};
+  escrever(`Comprovante de coleta #${codigoColeta(s)}`,40,'bold');
+  escrever(`Assinado em ${dataHora(assinadoEm)}`,28,'','#4A5C68');
+  if(s.noteNumber)escrever(`Notinha ${texto(s.noteNumber)}`,28,'','#4A5C68');
+  y+=6;
+  escrever(`De: ${texto(s.sender)||'—'}`,32,'bold');
+  escrever(`Para: ${texto(s.recipient)||'—'}`,32,'bold');
+  g.strokeStyle='#CBE0D1';g.lineWidth=2;g.beginPath();g.moveTo(M,y);g.lineTo(W-M,y);g.stroke();
+  y+=52;
+  for(const i of itens){
+    g.fillStyle='#17252F';g.font='28px Arial';
+    g.fillText(`${texto(i.qty)} ${texto(i.unit)} · ${texto(i.product)}${i.pairs?` · ${texto(i.pairs)} pares`:''}`.slice(0,56),M,y);
+    g.textAlign='right';g.fillText(money(i.total),W-M,y);g.textAlign='left';
+    y+=LINHA;
+  }
+  y+=10;
+  escrever(`Volumes: ${texto(s.volumes??0)}   Pares: ${texto(s.pairs??0)}   Total: ${money(s.total)}`,30,'bold');
+  escrever(`Frete a receber em ${s.freight==='NS'?'Nova Serrana':'São Paulo'}`,28,'','#4A5C68');
+  /* A assinatura entra sem distorcer: cabe na caixa mantendo a proporção. */
+  const box={x:M,y:y+4,w:W-2*M,h:230};
+  g.strokeStyle='#6E9380';g.setLineDash([10,8]);g.strokeRect(box.x,box.y,box.w,box.h);g.setLineDash([]);
+  const escala=Math.min((box.w-20)/canvas.width,(box.h-20)/canvas.height);
+  const lw=canvas.width*escala,lh=canvas.height*escala;
+  g.drawImage(canvas,box.x+(box.w-lw)/2,box.y+(box.h-lh)/2,lw,lh);
+  y=box.y+box.h+56;
+  escrever(`Assinado por: ${nome}`,32,'bold');
+  escrever('Comprovante operacional da coleta. Não substitui documento fiscal.',24,'','#5E7080');
+  return c.toDataURL('image/png');
+}
+
+function mostrarComprovante({nome,assinadoEm,imagem}){
+  $('#assinaturaCard').classList.add('hidden');
+  $('#abrirAssinatura').classList.add('hidden');
+  $('#comprovanteImg').src=imagem;
+  $('#comprovanteResumo').textContent=`Assinado por ${nome} em ${dataHora(assinadoEm)}.`;
+  $('#comprovanteCard').classList.remove('hidden');
+  recado('Assinatura registrada. Agora envie o comprovante pelo WhatsApp.');
+  $('#comprovanteCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+/* Celular que sabe compartilhar arquivo manda a imagem direto para o
+   WhatsApp. Os outros baixam a imagem e abrem a conversa com a mensagem
+   escrita, para a pessoa anexar. */
+async function enviarComprovante(paraCliente){
+  const imagem=$('#comprovanteImg').src;
+  const nomeArquivo=`comprovante-coleta-${codigoColeta(dados)}.png`;
+  const mensagem=`Alex Transportes — comprovante da coleta #${codigoColeta(dados)} (${texto(dados?.sender)} → ${texto(dados?.recipient)}).`;
+  try{
+    const blob=await (await fetch(imagem)).blob();
+    const arquivo=new File([blob],nomeArquivo,{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[arquivo]})){
+      await navigator.share({files:[arquivo],text:mensagem});
+      return;
+    }
+  }catch(err){if(err&&err.name==='AbortError')return}
+  const a=document.createElement('a');
+  a.href=imagem;a.download=nomeArquivo;document.body.appendChild(a);a.click();a.remove();
+  const tel=paraCliente?texto(dados?.phone).replace(/\D/g,''):'';
+  const numero=tel.length===10||tel.length===11?`55${tel}`:tel.length>=12?tel:'';
+  window.open(`https://wa.me/${numero}?text=${encodeURIComponent(`${mensagem} A imagem do comprovante foi baixada neste celular: anexe-a nesta conversa.`)}`,'_blank','noopener');
+}
+$('#enviarCliente').onclick=()=>enviarComprovante(true);
+$('#enviarTransportadora').onclick=()=>enviarComprovante(false);
+
+/* ------------------------------------------------------------------ abrir */
+async function abrir(){
+  if(direto){
+    $('#diretoBanner').classList.remove('hidden');
+    aviso('Coleta','Confira os dados antes de carregar.');
+    mostrar(direto);
+    const salvo=lerLocal();
+    if(salvo.status){dados.status=salvo.status;marcarBotoes()}
+    if(salvo.imagem)mostrarComprovante({nome:salvo.nome,assinadoEm:new Date(salvo.assinadoEm),imagem:salvo.imagem});
+    return;
+  }
+  if(demo){
+    $('#demoBanner').classList.remove('hidden');
+    aviso('Coleta (demonstração)','Confira os dados. Esta tela é só para ver como funciona.');
+    mostrar(demo);
+    return;
+  }
+  if(!online){
+    aviso('Link não configurado','Peça um link novo à transportadora. A parte online ainda não foi ativada.','error');
+    return;
+  }
+  /* O link sai da barra de endereços assim que a página abre: ele vale para
+     esta coleta e não precisa ficar exposto em foto de tela. */
+  history.replaceState(null,'',location.pathname);
+  let r;
+  try{r=await chamar({action:'read'})}catch{aviso('Sem conexão','Confira a internet do celular e abra o link de novo.','error');return}
+  if(!r.ok){aviso('Link indisponível',r.data.error||'Peça um link novo à transportadora.','error');return}
+  if(r.data.purpose!=='coleta'){aviso('Link de outra etapa','Este link é da entrega. Abra a página de assinatura da entrega.','error');return}
+  aviso('Coleta','Confira os dados antes de carregar.');
+  mostrar(r.data.summary||{});
+  if(r.data.state==='signed'){
+    $('#abrirAssinatura').classList.add('hidden');
+    recado('Esta coleta já foi assinada.');
+  }
+}
+abrir();
+</script></body></html>
