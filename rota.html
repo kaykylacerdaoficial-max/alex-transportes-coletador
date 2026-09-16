@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Rota de coletas — Alex Transportes</title>
+  <style>
+    /* ====================================================================
+       Rota do motorista — celular na mão, dentro do carro, com pressa.
+
+       Esta tela existe por um motivo simples: o computador da transportadora
+       não sabe onde o motorista está. Quem sabe é o celular dele. A ordem
+       enviada pela transportadora já vem pronta no link; aqui ela pode ser
+       recalculada A PARTIR DA POSIÇÃO ATUAL, se o motorista permitir.
+
+       Mesma identidade verde clara do sistema (as cores nascem em :root,
+       iguais às do styles.css, do coleta.html e do sign.html).
+
+       Regras desta tela:
+         - cabe em 390px de largura sem rolagem lateral;
+         - botão de ação tem no mínimo 56px de altura e texto de 17px;
+         - a ordem enviada pela transportadora aparece SEMPRE, mesmo sem GPS;
+         - nenhuma falha é silenciosa e nenhuma é vaga: cada uma diz o que
+           houve e o que fazer agora;
+         - a posição do motorista não sai deste aparelho sozinha: ela só vira
+           link de mapa quando ele toca no botão.
+       ==================================================================== */
+    :root{
+      --ink:#17252F; --ink-soft:#4A5C68; --ink-faint:#5E7080;
+      --paper:#EDF6EF; --surface:#FFFFFF; --surface-soft:#F5FBF6; --surface-green:#DFEFE4;
+      --line:#CBE0D1; --line-soft:#DEEAE1; --field-line:#6E9380;
+      --brand:#13462F; --action:#1B6B45; --action-hover:#145636; --on-action:#FFFFFF;
+      --positive:#146B43; --positive-bg:#E2F2E7;
+      --warn:#8A4A00; --warn-bg:#FDF2E0; --warn-line:#E3B778;
+      --danger:#B3261E; --danger-bg:#FDF1F0; --danger-line:#E7B4B0;
+      --focus:#2E8B60; --radius:14px;
+      --shadow:0 1px 2px rgba(19,70,47,.05),0 6px 18px rgba(19,70,47,.06);
+      font-family:Arial,Helvetica,sans-serif; color:var(--ink); background:var(--paper);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.45}
+    .page{max-width:620px;margin:auto;padding:18px 16px 40px}
+    .brand{font-size:12px;font-weight:700;letter-spacing:.8px;color:var(--brand)}
+    h1{font-size:23px;margin:6px 0 2px;line-height:1.25}
+    h2{font-size:16px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft)}
+    .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px;box-shadow:var(--shadow)}
+    .muted{font-size:14px;color:var(--ink-soft)}
+    .hidden{display:none!important}
+
+    button,.button{display:block;width:100%;min-height:56px;border:0;border-radius:12px;padding:15px;
+      font:700 17px Arial,Helvetica,sans-serif;background:var(--action);color:var(--on-action);
+      margin-top:12px;cursor:pointer;text-align:center;text-decoration:none}
+    button:hover,.button:hover{background:var(--action-hover)}
+    .secondary{background:var(--surface-green);color:var(--brand)}
+    .secondary:hover{background:#CFE7D7}
+    button[disabled]{background:#E7EDE9;color:var(--ink-faint);cursor:not-allowed}
+    button:focus-visible,.button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+    /* O recado de estado é o coração desta tela: ele diz de onde veio a ordem
+       que está na lista. Verde = da posição do motorista; âmbar = da ordem
+       enviada pela transportadora, porque o GPS não veio. */
+    .estado{border-radius:12px;padding:12px 14px;margin-top:14px;font-weight:700}
+    .estado.ok{background:var(--positive-bg);color:var(--positive)}
+    .estado.aviso{background:var(--warn-bg);color:var(--warn);border:2px solid var(--warn-line)}
+    .estado.erro{background:var(--danger-bg);color:var(--danger);border:2px solid var(--danger-line)}
+    .estado span{display:block;font-weight:400;margin-top:5px;font-size:14px;color:var(--ink)}
+
+    ol.paradas{list-style:none;margin:0;padding:0;counter-reset:parada}
+    ol.paradas li{counter-increment:parada;border-top:1px solid var(--line-soft);padding:12px 0}
+    ol.paradas li:first-child{border-top:0}
+    ol.paradas .numero{display:inline-block;min-width:26px;height:26px;line-height:26px;text-align:center;
+      border-radius:999px;background:var(--brand);color:var(--on-action);font-weight:700;font-size:14px;margin-right:8px}
+    ol.paradas .numero::before{content:counter(parada)}
+    ol.paradas b{font-size:17px}
+    ol.paradas small{display:block;color:var(--ink-soft);font-size:14px;margin:2px 0 0 34px}
+    ol.paradas small.sem-coord{color:var(--warn)}
+    .distancia{margin:10px 0 0;font-size:14px;color:var(--ink-soft)}
+    @media (max-width:400px){ .page{padding:12px 12px 40px} h1{font-size:21px} }
+  </style>
+</head>
+<body>
+<main class="page">
+  <p class="brand">ALEX TRANSPORTES</p>
+  <h1 id="titulo">Abrindo a rota…</h1>
+  <p class="muted" id="subtitulo"></p>
+
+  <p class="estado aviso hidden" id="semRota">
+    Este link não traz nenhuma rota.
+    <span>Peça à transportadora que gere o link de novo e mande outra vez.</span>
+  </p>
+
+  <section class="card hidden" id="blocoRota">
+    <h2>Paradas</h2>
+    <p class="estado" id="origem"></p>
+    <ol class="paradas" id="lista"></ol>
+    <p class="distancia hidden" id="distancia"></p>
+    <button type="button" id="usarLocalizacao">Usar minha localização</button>
+    <p class="muted" id="explicacao">
+      Abra este link <b>no seu celular</b>. Ao tocar no botão, o aparelho vai
+      pedir permissão para usar a localização. Ela fica só aqui: a rota é
+      recalculada dentro do próprio aparelho e nada é enviado para ninguém.
+    </p>
+    <button type="button" class="secondary hidden" id="voltarOrdemEnviada">Voltar à ordem enviada pela transportadora</button>
+  </section>
+
+  <section class="card hidden" id="blocoMapa">
+    <h2>Abrir no mapa</h2>
+    <div id="linksMapa"></div>
+    <p class="muted">O mapa abre no aplicativo do celular. A ordem das paradas
+      é a da lista acima.</p>
+  </section>
+</main>
+
+<script>
+/* =====================================================================
+   Esta página abre sozinha, publicada em um endereço público, sem carregar
+   o resto do sistema — por isso as contas de rota estão repetidas aqui,
+   pela mesma razão que o `coleta.html` repete o código de conclusão.
+
+   As regras são idênticas às do `core.js` (`haversineKm`, `optimizeRoute`,
+   `routeMapsUrls`), e o teste `tests/rota.test.js` compara as duas
+   implementações no mesmo conjunto de paradas para que elas não se
+   separem em silêncio.
+   ===================================================================== */
+
+const $ = s => document.querySelector(s);
+const texto = s => String(s ?? '').trim().replace(/\s+/g, ' ');
+
+/* ------------------------------------------------------------- o link */
+
+const ROTA = '#rota=';
+const ROTA_DEMO = '#rotademo=';
+
+function lerLink(valor) {
+  const t = String(valor || '');
+  for (const [marca, modo] of [[ROTA, 'direct'], [ROTA_DEMO, 'demo']]) {
+    const i = t.indexOf(marca);
+    if (i < 0) continue;
+    try {
+      const lido = JSON.parse(decodeURIComponent(t.slice(i + marca.length)));
+      if (!lido || typeof lido !== 'object' || Array.isArray(lido)) return null;
+      return { modo, date: texto(lido.date), stops: Array.isArray(lido.stops) ? lido.stops : [] };
+    } catch { return null; }
+  }
+  return null;
+}
+
+/* ------------------------------------------------- conta da rota (= core.js) */
+
+const EARTH_KM = 6371;
+const rad = d => (d * Math.PI) / 180;
+
+function haversineKm(a, b) {
+  if (!a || !b) return Infinity;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_KM * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function comprimentoKm(pontos, origem) {
+  let total = 0;
+  let de = origem || pontos[0];
+  for (const p of pontos) { total += haversineKm(de, p); de = p; }
+  return total;
+}
+
+/* Vizinho mais próximo a partir da origem, depois 2-opt para desfazer
+   cruzamentos. Parada sem coordenada não é chutada: fica no fim, na ordem
+   em que já estava. */
+function ordenar(stops, origem) {
+  const comCoord = (stops || []).filter(s => s && s.coords);
+  const semCoord = (stops || []).filter(s => !s || !s.coords);
+  const restantes = [...comCoord];
+  const ordem = [];
+  let atual = origem;
+  while (restantes.length) {
+    let melhor = 0;
+    if (atual) {
+      let menor = Infinity;
+      restantes.forEach((s, i) => {
+        const d = haversineKm(atual, s.coords);
+        if (d < menor) { menor = d; melhor = i; }
+      });
+    }
+    const [escolhida] = restantes.splice(melhor, 1);
+    ordem.push(escolhida);
+    atual = escolhida.coords;
+  }
+  const pontos = () => ordem.map(s => s.coords);
+  let melhorou = true;
+  let voltas = 0;
+  while (melhorou && voltas < 40) {
+    melhorou = false;
+    voltas += 1;
+    for (let i = 0; i < ordem.length - 1; i += 1) {
+      for (let j = i + 1; j < ordem.length; j += 1) {
+        const antes = comprimentoKm(pontos(), origem);
+        const trecho = ordem.slice(i, j + 1).reverse();
+        const candidato = [...ordem.slice(0, i), ...trecho, ...ordem.slice(j + 1)];
+        const depois = comprimentoKm(candidato.map(s => s.coords), origem);
+        if (depois + 1e-9 < antes) { ordem.splice(0, ordem.length, ...candidato); melhorou = true; }
+      }
+    }
+  }
+  const order = [...ordem, ...semCoord];
+  order.forEach((s, i) => { if (s) s.routeOrder = i + 1; });
+  return { order, km: Math.round(comprimentoKm(pontos(), origem) * 10) / 10, semCoordenada: semCoord.length };
+}
+
+const ponto = s => (s?.coords ? `${s.coords.lat},${s.coords.lon}` : texto(s?.address));
+const MAX_WAYPOINTS = 9;
+
+function linksDoMapa(stops, origem) {
+  const pontos = (stops || []).map(ponto).filter(Boolean);
+  if (!pontos.length) return [];
+  const urls = [];
+  let inicio = texto(origem);
+  for (let i = 0; i < pontos.length; i += MAX_WAYPOINTS + 1) {
+    const trecho = pontos.slice(i, i + MAX_WAYPOINTS + 1);
+    const destino = trecho[trecho.length - 1];
+    const paradas = trecho.slice(0, -1);
+    const params = new URLSearchParams({ api: '1', destination: destino, travelmode: 'driving' });
+    if (inicio) params.set('origin', inicio);
+    if (paradas.length) params.set('waypoints', paradas.join('|'));
+    urls.push(`https://www.google.com/maps/dir/?${params.toString()}`);
+    inicio = destino;
+  }
+  return urls;
+}
+
+/* --------------------------------------------- recados de falha do GPS
+
+   Mesmos textos do `describeLocationError` do core.js. Recado vago faz o
+   motorista desistir e ligar para a transportadora; aqui cada falha diz o
+   que houve e o que fazer agora. */
+const MOTIVOS = {
+  1: { motivo: 'A permissão de localização foi negada neste aparelho.',
+       saida: 'Toque no cadeado ao lado do endereço, ligue "Localização" e abra o link de novo. Ou use a ordem enviada pela transportadora, aqui embaixo.' },
+  2: { motivo: 'O aparelho não conseguiu descobrir onde você está.',
+       saida: 'Saia de baixo de cobertura, confira se o GPS está ligado e tente de novo. A ordem enviada pela transportadora continua valendo.' },
+  3: { motivo: 'O aparelho demorou demais para achar a localização.',
+       saida: 'Tente de novo em um lugar aberto. Enquanto isso, siga a ordem enviada pela transportadora.' },
+};
+
+function explicarFalha(erro, { seguro = true, suportado = true } = {}) {
+  if (!suportado) return { motivo: 'Este navegador não sabe informar a localização.', saida: 'Abra o link no Chrome ou no Safari do celular. A ordem enviada pela transportadora continua valendo.' };
+  if (!seguro) return { motivo: 'Esta página não está em endereço seguro (https), e por isso o celular não libera a localização.', saida: 'Peça à transportadora o link publicado, que começa com https. A ordem enviada por ela continua valendo.' };
+  const conhecido = MOTIVOS[Number(erro?.code)];
+  if (conhecido) return conhecido;
+  return { motivo: 'Não foi possível pegar a localização agora.', saida: 'Tente de novo. Se não vier, siga a ordem enviada pela transportadora.' };
+}
+
+/* ---------------------------------------------------------------- tela */
+
+const estado = { enviadas: [], atuais: [], origem: null, modo: 'enviada' };
+
+function desenhar() {
+  const stops = estado.atuais;
+  $('#lista').innerHTML = stops.map(s => {
+    const endereco = texto(s.address) || 'sem endereço cadastrado';
+    const falta = s.coords ? '' : ' · fora do cálculo por falta de endereço no mapa';
+    return `<li><b><span class="numero"></span>${escapar(texto(s.sender) || 'Cliente')}</b>`
+      + `<small class="${s.coords ? '' : 'sem-coord'}">${escapar(endereco)}${falta}</small></li>`;
+  }).join('');
+
+  const semCoord = stops.filter(s => !s.coords).length;
+  const caixa = $('#origem');
+  if (estado.modo === 'gps') {
+    caixa.className = 'estado ok';
+    caixa.innerHTML = 'Ordem calculada a partir de onde você está agora.'
+      + `<span>Começando pela parada mais perto de você.${semCoord ? ` ${semCoord} parada(s) sem endereço no mapa ficaram no fim.` : ''}</span>`;
+    const km = ordenar(stops.map(s => ({ ...s })), estado.origem).km;
+    $('#distancia').textContent = `Cerca de ${km.toLocaleString('pt-BR')} km em linha reta entre as paradas. É uma estimativa para ordenar — a distância pela estrada é maior.`;
+    $('#distancia').classList.remove('hidden');
+    $('#voltarOrdemEnviada').classList.remove('hidden');
+  } else {
+    caixa.className = 'estado aviso';
+    caixa.innerHTML = 'Esta é a ordem enviada pela transportadora.'
+      + `<span>Ela ainda não leva em conta onde você está.${semCoord ? ` ${semCoord} parada(s) estão sem endereço no mapa.` : ''}</span>`;
+    $('#distancia').classList.add('hidden');
+    $('#voltarOrdemEnviada').classList.add('hidden');
+  }
+
+  const urls = linksDoMapa(stops, estado.modo === 'gps' && estado.origem ? `${estado.origem.lat},${estado.origem.lon}` : '');
+  $('#linksMapa').innerHTML = urls.map((u, i) =>
+    `<a class="button" href="${escapar(u)}" target="_blank" rel="noopener noreferrer">Abrir no Google Maps${urls.length > 1 ? ` — parte ${i + 1}` : ''}</a>`).join('');
+  $('#blocoMapa').classList.toggle('hidden', !urls.length);
+}
+
+function escapar(s) {
+  return String(s ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+}
+
+function avisarFalha({ motivo, saida }) {
+  const caixa = $('#origem');
+  caixa.className = 'estado erro';
+  caixa.innerHTML = `${escapar(motivo)}<span>${escapar(saida)}</span>`;
+  $('#distancia').classList.add('hidden');
+  $('#voltarOrdemEnviada').classList.add('hidden');
+}
+
+/* O contexto seguro é o que decide se o GPS existe. Arquivo aberto do
+   computador e http não liberam — e a tela diz isso ANTES de o motorista
+   tocar no botão à toa. */
+const contextoSeguro = () => window.isSecureContext === true;
+const temGeolocalizacao = () => !!(navigator.geolocation && typeof navigator.geolocation.getCurrentPosition === 'function');
+
+function pedirLocalizacao() {
+  const botao = $('#usarLocalizacao');
+  if (!temGeolocalizacao()) { avisarFalha(explicarFalha(null, { suportado: false })); return; }
+  if (!contextoSeguro()) { avisarFalha(explicarFalha(null, { seguro: false })); return; }
+  botao.disabled = true;
+  botao.textContent = 'Procurando sua localização…';
+  const terminar = () => { botao.disabled = false; botao.textContent = 'Recalcular a partir de onde estou'; };
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lat = Number(pos?.coords?.latitude);
+      const lon = Number(pos?.coords?.longitude);
+      terminar();
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) { avisarFalha(explicarFalha({ code: 2 })); return; }
+      estado.origem = { lat, lon };
+      estado.modo = 'gps';
+      /* A ordem é recalculada A PARTIR DA POSIÇÃO DO MOTORISTA — nunca da
+         origem digitada no computador da transportadora. */
+      estado.atuais = ordenar(estado.enviadas.map(s => ({ ...s })), estado.origem).order;
+      desenhar();
+    },
+    erro => { terminar(); avisarFalha(explicarFalha(erro)); },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+  );
+}
+
+function voltarOrdemEnviada() {
+  estado.modo = 'enviada';
+  estado.origem = null;
+  estado.atuais = estado.enviadas.map(s => ({ ...s }));
+  $('#usarLocalizacao').textContent = 'Usar minha localização';
+  desenhar();
+}
+
+/* -------------------------------------------------------------- abertura */
+
+function abrir() {
+  const lido = lerLink(location.href);
+  if (!lido || !lido.stops.length) {
+    $('#titulo').textContent = 'Rota não encontrada';
+    $('#subtitulo').textContent = '';
+    $('#semRota').classList.remove('hidden');
+    return;
+  }
+  estado.enviadas = lido.stops.map(s => {
+    const lat = Number(s?.lat);
+    const lon = Number(s?.lon);
+    return {
+      sender: texto(s?.sender),
+      address: texto(s?.address),
+      code: Number(s?.code) || 0,
+      coords: Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null,
+    };
+  });
+  estado.atuais = estado.enviadas.map(s => ({ ...s }));
+  $('#titulo').textContent = `Rota de coletas${lido.date ? ` — ${lido.date}` : ''}`;
+  $('#subtitulo').textContent = `${estado.enviadas.length} parada(s) em Nova Serrana.`;
+  $('#blocoRota').classList.remove('hidden');
+
+  /* Sem contexto seguro o botão não promete o que não pode cumprir: ele some
+     e a tela explica por quê, em vez de falhar depois do toque. */
+  if (!temGeolocalizacao() || !contextoSeguro()) {
+    const falha = explicarFalha(null, { seguro: contextoSeguro(), suportado: temGeolocalizacao() });
+    $('#usarLocalizacao').classList.add('hidden');
+    $('#explicacao').innerHTML = `<b>${escapar(falha.motivo)}</b> ${escapar(falha.saida)}`;
+  }
+  if (!estado.enviadas.some(s => s.coords)) {
+    /* Sem nenhuma coordenada não há o que recalcular: o GPS acharia o
+       motorista e não teria com o que comparar. */
+    $('#usarLocalizacao').classList.add('hidden');
+    $('#explicacao').innerHTML = '<b>Nenhuma parada desta rota tem endereço localizado no mapa.</b> '
+      + 'A ordem abaixo é a que a transportadora enviou. Peça a ela para cadastrar os endereços dos clientes.';
+  }
+  desenhar();
+}
+
+$('#usarLocalizacao').addEventListener('click', pedirLocalizacao);
+$('#voltarOrdemEnviada').addEventListener('click', voltarOrdemEnviada);
+abrir();
+</script>
+</body>
+</html>
+

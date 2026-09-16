@@ -139,9 +139,9 @@
     <p class="ok" id="comprovanteResumo"></p>
     <p class="codigo" id="codigoConclusao"></p>
     <img id="comprovanteImg" class="comprovante" alt="Comprovante da coleta assinado">
-    <button type="button" id="enviarCliente">Enviar comprovante ao cliente</button>
-    <button type="button" class="secondary" id="enviarTransportadora">Enviar comprovante à transportadora</button>
-    <p class="muted">O WhatsApp abre para você escolher a conversa. Se o celular não oferecer o WhatsApp, a imagem é baixada: anexe-a na conversa que abrir.</p>
+    <button type="button" id="enviarCliente">Enviar ao fabricante / cliente NS</button>
+    <button type="button" class="secondary" id="enviarTransportadora">Enviar à transportadora</button>
+    <p class="muted">Cada botão já procura o número cadastrado. O celular pede sua confirmação antes de compartilhar; se o WhatsApp não aceitar a imagem diretamente, ela será baixada para anexar.</p>
   </section>
 </main>
 <script>
@@ -295,9 +295,14 @@ $('#confirmar').onclick=async e=>{
   try{
     const r=await chamar({action:'sign',signerName:nome,signatureStrokes:strokes});
     if(!r.ok)throw new Error(r.data.error||'Não foi possível salvar.');
+    const assinadoEm=new Date(r.data.signedAt||Date.now());
+    const vetor=Array.isArray(r.data.signatureVector)?r.data.signatureVector:strokes;
+    const imagem=montarComprovante(dados,{nome:r.data.signerName||nome,assinadoEm});
     $('#assinaturaCard').classList.add('hidden');
     dados.status='coletada';marcarBotoes();
-    recado(`Assinatura confirmada. Obrigado, ${nome}.`);
+    guardarLocal({status:'coletada',nome:r.data.signerName||nome,assinadoEm:assinadoEm.toISOString(),imagem,signatureVector:vetor});
+    mostrarComprovante({nome:r.data.signerName||nome,assinadoEm,imagem});
+    recado(`Assinatura confirmada. Obrigado, ${r.data.signerName||nome}.`);
   }catch(err){
     recado(err.message||'Não foi possível salvar. Tente novamente.','error');
     botao.disabled=false;botao.textContent='Confirmar assinatura';
@@ -394,18 +399,31 @@ async function enviarComprovante(paraCliente){
   const quem=texto(salvo.nome)?` Assinou: ${texto(salvo.nome)}.`:'';
   const paraSistema=codigo?` Código para o sistema: ${codigo}.`:'';
   const mensagem=`Alex Transportes — comprovante da coleta #${codigoColeta(dados)} (${texto(dados?.sender)} → ${texto(dados?.recipient)}).${quem}${paraSistema}`;
+  const telefone=paraCliente?(dados?.senderPhone||dados?.phone):(dados?.transportPhone||'');
+  const tel=texto(telefone).replace(/\D/g,'');
   try{
     const blob=await (await fetch(imagem)).blob();
     const arquivo=new File([blob],nomeArquivo,{type:'image/png'});
-    if(navigator.canShare&&navigator.canShare({files:[arquivo]})){
+    /* Com telefone conhecido, abrir diretamente o WhatsApp é mais previsível
+       que a folha genérica de compartilhamento: o coletador não precisa
+       escolher o contato. O anexo ainda exige a confirmação do celular. */
+    if(!tel&&navigator.canShare&&navigator.canShare({files:[arquivo]})){
       await navigator.share({files:[arquivo],text:mensagem});
       return;
     }
   }catch(err){if(err&&err.name==='AbortError')return}
+  if(!tel){
+    if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(mensagem).catch(()=>{});
+    recado(paraCliente?'Telefone do fabricante / cliente NS não cadastrado. O código foi copiado; peça o cadastro antes de enviar.':'Telefone da transportadora não cadastrado. O código foi copiado; cadastre o número para abrir a conversa certa.','error');
+    return;
+  }
   const a=document.createElement('a');
   a.href=imagem;a.download=nomeArquivo;document.body.appendChild(a);a.click();a.remove();
-  const tel=paraCliente?texto(dados?.phone).replace(/\D/g,''):'';
   const numero=tel.length===10||tel.length===11?`55${tel}`:tel.length>=12?tel:'';
+  if(!numero){
+    recado('O telefone cadastrado não parece válido. Corrija o cadastro antes de enviar.','error');
+    return;
+  }
   window.open(`https://wa.me/${numero}?text=${encodeURIComponent(`${mensagem} A imagem do comprovante foi baixada neste celular: anexe-a nesta conversa.`)}`,'_blank','noopener');
 }
 $('#enviarCliente').onclick=()=>enviarComprovante(true);
