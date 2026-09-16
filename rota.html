@@ -76,6 +76,7 @@
     ol.paradas b{font-size:17px}
     ol.paradas small{display:block;color:var(--ink-soft);font-size:14px;margin:2px 0 0 34px}
     ol.paradas small.sem-coord{color:var(--warn)}
+    .acao-parada{margin:10px 0 0 34px;width:calc(100% - 34px);min-height:48px;padding:12px;font-size:15px}
     .distancia{margin:10px 0 0;font-size:14px;color:var(--ink-soft)}
     @media (max-width:400px){ .page{padding:12px 12px 40px} h1{font-size:21px} }
   </style>
@@ -150,6 +151,8 @@ function expandirRota(valor) {
     date: texto(valor.d),
     stops: Array.isArray(valor.s) ? valor.s.map(parada => {
       const expandida = { sender: texto(parada?.n), address: texto(parada?.a) };
+      const link = texto(parada?.u || parada?.link);
+      if (link) expandida.link = link;
       const lat = Number(parada?.l), lon = Number(parada?.o);
       if (Number.isFinite(lat) && Number.isFinite(lon)) { expandida.lat = lat; expandida.lon = lon; }
       const code = Number(parada?.c);
@@ -292,8 +295,11 @@ function desenhar() {
   $('#lista').innerHTML = stops.map(s => {
     const endereco = texto(s.address) || 'sem endereço cadastrado';
     const falta = s.coords ? '' : ' · fora do cálculo por falta de endereço no mapa';
+    const acao = s.link
+      ? `<a class="button secondary acao-parada" href="${escapar(s.link)}" target="_blank" rel="noopener noreferrer">Abrir coleta e assinar</a>`
+      : '';
     return `<li><b><span class="numero"></span>${escapar(texto(s.sender) || 'Cliente')}</b>`
-      + `<small class="${s.coords ? '' : 'sem-coord'}">${escapar(endereco)}${falta}</small></li>`;
+      + `<small class="${s.coords ? '' : 'sem-coord'}">${escapar(endereco)}${falta}</small>${acao}</li>`;
   }).join('');
 
   const semCoord = stops.filter(s => !s.coords).length;
@@ -387,6 +393,7 @@ function abrir() {
     return {
       sender: texto(s?.sender),
       address: texto(s?.address),
+      link: texto(s?.link),
       code: Number(s?.code) || 0,
       coords: Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null,
     };
