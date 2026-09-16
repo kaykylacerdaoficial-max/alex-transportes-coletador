@@ -45,7 +45,8 @@
     .direto{background:var(--surface-green);border:2px solid var(--action);color:var(--brand);font-weight:700;border-radius:var(--radius);padding:12px 14px;margin-top:12px}
     .direto span{display:block;font-weight:400;color:var(--ink);margin-top:4px;font-size:14px}
     .comprovante{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px;display:block}
-    .codigo{background:var(--surface-green);color:var(--brand);border-radius:10px;padding:10px 12px;font-weight:700;letter-spacing:.5px}
+    .codigo-linha{display:grid;grid-template-columns:1fr 170px;gap:10px;align-items:center}
+    .codigo{background:var(--surface-green);color:var(--brand);border-radius:10px;padding:10px 12px;font-weight:700;letter-spacing:.5px;margin:0}
     .status{display:inline-block;background:var(--surface-green);color:var(--brand);border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px}
     .route{font-size:20px;font-weight:700;color:var(--ink);margin:0}
     .to{font-size:15px;color:var(--ink-soft);margin:2px 0 0}
@@ -72,6 +73,7 @@
     input:focus{border-color:var(--action);outline:3px solid var(--focus);outline-offset:2px}
     .signature{width:100%;height:190px;border:2px dashed var(--field-line);border-radius:10px;background:var(--surface);touch-action:none;margin-top:10px;display:block}
     .hidden{display:none!important}
+    @media(max-width:520px){.codigo-linha{grid-template-columns:1fr}.codigo-linha button{width:100%}}
     .error{color:var(--danger);font-weight:700}
     .ok{color:var(--positive);font-weight:700}
     .feedback{margin-top:10px;font-weight:700}
@@ -137,11 +139,14 @@
   <section class="card hidden" id="comprovanteCard">
     <h2>Comprovante</h2>
     <p class="ok" id="comprovanteResumo"></p>
-    <p class="codigo" id="codigoConclusao"></p>
+    <div class="codigo-linha hidden" id="codigoLinha">
+      <p class="codigo" id="codigoConclusao"></p>
+      <button type="button" class="secondary" id="copiarCodigo">Copiar código</button>
+    </div>
     <img id="comprovanteImg" class="comprovante" alt="Comprovante da coleta assinado">
     <button type="button" id="enviarCliente">Enviar ao fabricante / cliente NS</button>
     <button type="button" class="secondary" id="enviarTransportadora">Enviar à transportadora</button>
-    <p class="muted">Cada botão já procura o número cadastrado. O celular pede sua confirmação antes de compartilhar; se o WhatsApp não aceitar a imagem diretamente, ela será baixada para anexar.</p>
+    <p class="muted">O fabricante recebe só o comprovante. A transportadora recebe o comprovante e o código para atualizar o painel. O celular pede sua confirmação; se o WhatsApp não aceitar a imagem diretamente, ela será baixada para anexar.</p>
   </section>
 </main>
 <script>
@@ -381,10 +386,19 @@ function mostrarComprovante({nome,assinadoEm,imagem}){
   $('#comprovanteResumo').textContent=`Assinado por ${nome} em ${dataHora(assinadoEm)}.`;
   const codigo=codigoConclusao(dados?.collectionNumber,assinadoEm);
   $('#codigoConclusao').textContent=codigo?`Código para a transportadora: ${codigo}`:'';
-  $('#codigoConclusao').classList.toggle('hidden',!codigo);
+  $('#codigoConclusao').dataset.code=codigo||'';
+  $('#codigoLinha').classList.toggle('hidden',!codigo);
   $('#comprovanteCard').classList.remove('hidden');
   recado('Assinatura registrada. Agora envie o comprovante pelo WhatsApp.');
   $('#comprovanteCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function copiarCodigo(){
+  const codigo=$('#codigoConclusao').dataset.code||'';
+  if(!codigo)return;
+  try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(codigo);else throw new Error('clipboard')}
+  catch{recado('Selecione e copie o código exibido acima.','error');return}
+  recado('Código copiado. Ele só é necessário se a base online não atualizar sozinha.');
 }
 
 /* Celular que sabe compartilhar arquivo manda a imagem direto para o
@@ -397,8 +411,9 @@ async function enviarComprovante(paraCliente){
   const assinadoEm=salvo.assinadoEm?new Date(salvo.assinadoEm):new Date();
   const codigo=codigoConclusao(dados?.collectionNumber,assinadoEm);
   const quem=texto(salvo.nome)?` Assinou: ${texto(salvo.nome)}.`:'';
-  const paraSistema=codigo?` Código para o sistema: ${codigo}.`:'';
-  const mensagem=`Alex Transportes — comprovante da coleta #${codigoColeta(dados)} (${texto(dados?.sender)} → ${texto(dados?.recipient)}).${quem}${paraSistema}`;
+  const mensagem=paraCliente
+    ?`Alex Transportes — comprovante da coleta #${codigoColeta(dados)} (${texto(dados?.sender)} → ${texto(dados?.recipient)}).${quem}`
+    :`Código de conclusão: ${codigo}. Comprovante da coleta #${codigoColeta(dados)}. ${quem}`;
   const telefone=paraCliente?(dados?.senderPhone||dados?.phone):(dados?.transportPhone||'');
   const tel=texto(telefone).replace(/\D/g,'');
   try{
@@ -428,6 +443,7 @@ async function enviarComprovante(paraCliente){
 }
 $('#enviarCliente').onclick=()=>enviarComprovante(true);
 $('#enviarTransportadora').onclick=()=>enviarComprovante(false);
+$('#copiarCodigo').onclick=copiarCodigo;
 
 /* ------------------------------------------------------------------ abrir */
 async function abrir(){
