@@ -133,15 +133,45 @@ const texto = s => String(s ?? '').trim().replace(/\s+/g, ' ');
 const ROTA = '#rota=';
 const ROTA_DEMO = '#rotademo=';
 
+function decodificarBase64Url(valor) {
+  const normalizado = String(valor || '').replaceAll('-', '+').replaceAll('_', '/');
+  const binario = atob(normalizado + '='.repeat((4 - normalizado.length % 4) % 4));
+  const bytes = Uint8Array.from(binario, c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function expandirRota(valor) {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return null;
+  if ('date' in valor || 'stops' in valor) {
+    return { date: texto(valor.date), stops: Array.isArray(valor.stops) ? valor.stops : [] };
+  }
+  if (!('d' in valor) && !('s' in valor)) return null;
+  return {
+    date: texto(valor.d),
+    stops: Array.isArray(valor.s) ? valor.s.map(parada => {
+      const expandida = { sender: texto(parada?.n), address: texto(parada?.a) };
+      const lat = Number(parada?.l), lon = Number(parada?.o);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) { expandida.lat = lat; expandida.lon = lon; }
+      const code = Number(parada?.c);
+      if (Number.isFinite(code) && code) expandida.code = code;
+      return expandida;
+    }) : [],
+  };
+}
+
 function lerLink(valor) {
   const t = String(valor || '');
   for (const [marca, modo] of [[ROTA, 'direct'], [ROTA_DEMO, 'demo']]) {
     const i = t.indexOf(marca);
     if (i < 0) continue;
     try {
-      const lido = JSON.parse(decodeURIComponent(t.slice(i + marca.length)));
+      const bruto = t.slice(i + marca.length);
+      let lido;
+      try { lido = JSON.parse(decodificarBase64Url(bruto)); }
+      catch { lido = JSON.parse(decodeURIComponent(bruto)); }
       if (!lido || typeof lido !== 'object' || Array.isArray(lido)) return null;
-      return { modo, date: texto(lido.date), stops: Array.isArray(lido.stops) ? lido.stops : [] };
+      const rota = expandirRota(lido);
+      return rota ? { modo, ...rota } : null;
     } catch { return null; }
   }
   return null;
