@@ -71,12 +71,22 @@
   <div class="brand">ALEX TRANSPORTES</div><h1 id="title">Abrindo assinatura…</h1><p id="status">Aguarde um instante.</p>
   <section class="card hidden" id="summary"><p class="route" id="route"></p><p class="muted" id="reference"></p><div id="items"></div><div class="total"><span>Total</span><strong id="grandTotal"></strong></div><p class="muted" id="freight"></p><p class="muted hidden" id="observation"></p></section>
   <form class="card hidden" id="form"><h2>Assine para confirmar</h2><label>Nome de quem assina<input id="signerName" autocomplete="name" required></label><canvas id="signature" class="signature" width="900" height="330" aria-label="Área para assinatura"></canvas><button type="button" class="secondary" id="clear">Apagar assinatura</button><button type="submit">Confirmar assinatura</button><p class="muted">A assinatura fica ligada a esta coleta, com data e horário. Ela é um comprovante da operação, e não substitui documento fiscal.</p></form>
+  <section class="card hidden" id="proof"><h2>Comprovante</h2><p class="muted" id="proofSigner"></p><p class="muted" id="proofDate"></p><canvas id="proofCanvas" class="signature" width="900" height="330" aria-label="Assinatura registrada"></canvas></section>
 </main><script>
 const $=s=>document.querySelector(s), config=window.SIGN_CONFIG||{};
-const token=new URLSearchParams(location.search).get('t');
-/* O link sai da barra de endereços assim que a página abre: ele vale uma vez
-   só e não precisa ficar exposto em foto de tela ou histórico. */
-if(token)history.replaceState(null,'',location.pathname);
+/* O token pode chegar por query (?t=) ou por fragmento (#t=). O fragmento é
+   compatível com o link compacto que o coletador abre a partir da rota
+   (mesmo formato usado em coleta.html), e nunca sai do navegador — não vai
+   para o servidor nem para registro de acesso. */
+const queryToken=new URLSearchParams(location.search).get('t');
+const hashToken=new URLSearchParams(location.hash.replace(/^#/,'')).get('t');
+const token=queryToken||hashToken;
+/* Token de query some da barra assim que a página abre: ele vale uma vez só
+   e não precisa ficar exposto em foto de tela ou histórico do navegador. Já
+   o token de fragmento nunca chega ao servidor, então pode continuar na
+   barra — apagá-lo aqui faria um simples F5 perder o link antes da pessoa
+   conseguir assinar. */
+if(queryToken)history.replaceState(null,'',location.pathname+location.hash);
 let signed=false,drawing=false,currentStroke=null;const strokes=[];
 const canvas=$('#signature'),ctx=canvas.getContext('2d');ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#17252F';
 function point(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
@@ -89,6 +99,26 @@ function texto(v){return String(v??'')}
 /* Texto que vira HTML passa por aqui antes: dado nunca vira marcação. */
 function esc(v){return texto(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function aviso(titulo,mensagem,classe){$('#title').textContent=titulo;$('#status').textContent=mensagem;$('#status').className=classe}
+/* Reabrir um link já assinado não pode virar só "já confirmada": a pessoa
+   pode precisar mostrar a assinatura de novo (ex.: o app fechou antes dela
+   ver a tela de sucesso). O traçado guardado é redesenhado aqui, sem
+   precisar de uma segunda imagem salva no banco. */
+function mostrarComprovante(proof){
+  aviso('Assinatura já confirmada','Esta coleta já tem a assinatura registrada.','ok');
+  if(!proof)return;
+  $('#proofSigner').textContent=`Assinado por: ${texto(proof.signerName)}`;
+  $('#proofDate').textContent=proof.signedAt?`Em: ${new Date(proof.signedAt).toLocaleString('pt-BR')}`:'';
+  const canvas=$('#proofCanvas'),ctx=canvas.getContext('2d');
+  ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#17252F';
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  (proof.signatureVector||[]).forEach(stroke=>{
+    if(!Array.isArray(stroke)||!stroke.length)return;
+    ctx.beginPath();ctx.moveTo(stroke[0].x,stroke[0].y);
+    stroke.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+    ctx.stroke();
+  });
+  $('#proof').classList.remove('hidden');
+}
 /* O token vai no corpo do pedido, nunca no endereço: assim ele não aparece
    em registro de servidor nem em histórico de navegação. */
 async function chamar(payload){
@@ -100,7 +130,7 @@ async function load(){
   if(!token||!config.endpoint){aviso('Link não configurado','Peça um novo link à transportadora.','error');return}
   let r;
   try{r=await chamar({action:'read'})}catch{aviso('Sem conexão','Verifique a internet do celular e abra o link de novo.','error');return}
-  if(r.data.state==='signed'){aviso('Assinatura já confirmada','Esta coleta já tem a assinatura registrada.','ok');return}
+  if(r.data.state==='signed'){mostrarComprovante(r.data.proof);return}
   if(!r.ok){aviso('Link indisponível',r.data.error||'Peça um novo link à transportadora.','error');return}
   const s=r.data.summary;
   $('#title').textContent=r.data.purpose==='entrega'?'Confirmação de entrega':'Confirmação de coleta';

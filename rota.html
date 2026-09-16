@@ -289,15 +289,26 @@ function explicarFalha(erro, { seguro = true, suportado = true } = {}) {
 /* ---------------------------------------------------------------- tela */
 
 const estado = { enviadas: [], atuais: [], origem: null, modo: 'enviada' };
+/* O conteúdo do fragmento é dado não confiável: nunca executa javascript:
+   nem manda o coletador assinar em outro domínio. */
+function linkDaColeta(value){
+  try{
+    const u=new URL(texto(value),location.href);
+    const base=new URL('.',location.href);
+    return u.origin===base.origin&&u.pathname===`${base.pathname}coleta.html`
+      &&['https:','http:','file:'].includes(u.protocol)&&!u.username&&!u.password?u.href:'';
+  }catch{return ''}
+}
 
 function desenhar() {
   const stops = estado.atuais;
   $('#lista').innerHTML = stops.map(s => {
     const endereco = texto(s.address) || 'sem endereço cadastrado';
     const falta = s.coords ? '' : ' · fora do cálculo por falta de endereço no mapa';
-    const acao = s.link
-      ? `<a class="button secondary acao-parada" href="${escapar(s.link)}" target="_blank" rel="noopener noreferrer">Abrir coleta e assinar</a>`
-      : '';
+    const link=linkDaColeta(s.link);
+    const acao = link
+      ? `<a class="button secondary acao-parada" href="${escapar(link)}" target="_blank" rel="noopener noreferrer">Abrir coleta e assinar</a>`
+      : '<small class="sem-link">Assinatura indisponível nesta parada. Peça à transportadora para gerar a rota novamente.</small>';
     return `<li><b><span class="numero"></span>${escapar(texto(s.sender) || 'Cliente')}</b>`
       + `<small class="${s.coords ? '' : 'sem-coord'}">${escapar(endereco)}${falta}</small>${acao}</li>`;
   }).join('');
