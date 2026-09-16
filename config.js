@@ -1,2 +1,4 @@
-/* A parte online (Supabase) não está ativada. A página funciona pelo link direto. */
-window.SIGN_CONFIG = null;
+/* Endpoint público da função de assinatura. Não há chave secreta aqui. */
+window.SIGN_CONFIG = {
+  endpoint: 'https://xsiatzrdsifmggcygcks.supabase.co/functions/v1/sign',
+};
