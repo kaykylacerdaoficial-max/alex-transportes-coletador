@@ -152,8 +152,8 @@
 <script>
 /* Tela do coletador. Três modos, e a diferença aparece na tela:
      online         — fala com a Edge Function pelo link secreto;
-     link direto    — os dados vêm depois do "#coleta=" (que nunca é enviado a
-                      servidor nenhum); a assinatura vira um comprovante em
+     link direto    — os dados compactos vêm depois do "#coleta=" (que nunca é
+                      enviado a servidor nenhum); a assinatura vira um comprovante em
                       imagem, guardado neste celular e enviado pelo WhatsApp;
      demonstração   — mesmo transporte, depois do "#demo=", e nada é gravado. */
 const $=s=>document.querySelector(s);
@@ -171,7 +171,22 @@ function lerLink(hash){
   for(const [marca,modo] of [['#coleta=','direto'],['#demo=','demo']]){
     if(!valor.startsWith(marca))continue;
     try{
-      const p=JSON.parse(decodeURIComponent(valor.slice(marca.length)));
+      const bruto=valor.slice(marca.length);
+      let p;
+      try{
+        const normalizado=bruto.replaceAll('-','+').replaceAll('_','/');
+        const binario=atob(normalizado+'='.repeat((4-normalizado.length%4)%4));
+        const bytes=Uint8Array.from(binario,ch=>ch.charCodeAt(0));
+        p=JSON.parse(new TextDecoder().decode(bytes));
+      }catch{
+        /* Compatibilidade com links antigos e com o modo de demonstração. */
+        p=JSON.parse(decodeURIComponent(bruto));
+      }
+      /* A carga compacta usa letras curtas; aqui ela volta ao formato que a
+         tela já conhece. Links antigos continuam sendo aceitos. */
+      if(modo==='direto' && !('collectionNumber' in p) && ('n' in p || 's' in p || 'i' in p)){
+        p={collectionNumber:p.n??null,date:p.d||'',noteNumber:p.N||'',freight:p.f||'SP',sender:p.s||'',recipient:p.r||'',observation:p.o||'',status:p.t||'',priority:p.p||'',routeOrder:p.q||null,address:p.a||'',reference:p.e||'',phone:p.h||'',senderPhone:p.h||'',recipientPhone:p.rh||'',mapLink:p.m||'',transportPhone:p.tp||'',volumes:p.v||0,pairs:p.P||0,total:p.x||0,items:Array.isArray(p.i)?p.i.map(i=>({qty:i.q||0,unit:i.u||'',product:i.p||'',pairs:i.a||0,total:i.t||0})):[]};
+      }
       return p&&typeof p==='object'&&!Array.isArray(p)?{modo,dados:p}:null;
     }catch{return null}
   }
