@@ -45,6 +45,7 @@
     .direto{background:var(--surface-green);border:2px solid var(--action);color:var(--brand);font-weight:700;border-radius:var(--radius);padding:12px 14px;margin-top:12px}
     .direto span{display:block;font-weight:400;color:var(--ink);margin-top:4px;font-size:14px}
     .comprovante{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px;display:block}
+    .codigo{background:var(--surface-green);color:var(--brand);border-radius:10px;padding:10px 12px;font-weight:700;letter-spacing:.5px}
     .status{display:inline-block;background:var(--surface-green);color:var(--brand);border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px}
     .route{font-size:20px;font-weight:700;color:var(--ink);margin:0}
     .to{font-size:15px;color:var(--ink-soft);margin:2px 0 0}
@@ -136,6 +137,7 @@
   <section class="card hidden" id="comprovanteCard">
     <h2>Comprovante</h2>
     <p class="ok" id="comprovanteResumo"></p>
+    <p class="codigo" id="codigoConclusao"></p>
     <img id="comprovanteImg" class="comprovante" alt="Comprovante da coleta assinado">
     <button type="button" id="enviarCliente">Enviar comprovante ao cliente</button>
     <button type="button" class="secondary" id="enviarTransportadora">Enviar comprovante à transportadora</button>
@@ -353,11 +355,28 @@ function montarComprovante(s,{nome,assinadoEm}){
   return c.toDataURL('image/png');
 }
 
+/* Código curto que a transportadora cola no sistema: diz qual coleta e
+   quando foi assinada, com dígito de conferência contra erro de digitação.
+   Mesma regra do core.js do sistema — aqui repetida porque esta página abre
+   sozinha, sem carregar o resto. */
+function codigoConclusao(numero,quando){
+  const b36='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const dois=n=>String(n).padStart(2,'0');
+  const n=Number(numero)||0;
+  if(!n)return '';
+  const corpo=`${n.toString(36).toUpperCase()}-${dois(quando.getDate())}${dois(quando.getMonth()+1)}-${dois(quando.getHours())}${dois(quando.getMinutes())}`;
+  const soma=[...corpo].reduce((t,ch)=>t+ch.charCodeAt(0),0);
+  return `AT-${corpo}-${b36[soma%36]}`;
+}
+
 function mostrarComprovante({nome,assinadoEm,imagem}){
   $('#assinaturaCard').classList.add('hidden');
   $('#abrirAssinatura').classList.add('hidden');
   $('#comprovanteImg').src=imagem;
   $('#comprovanteResumo').textContent=`Assinado por ${nome} em ${dataHora(assinadoEm)}.`;
+  const codigo=codigoConclusao(dados?.collectionNumber,assinadoEm);
+  $('#codigoConclusao').textContent=codigo?`Código para a transportadora: ${codigo}`:'';
+  $('#codigoConclusao').classList.toggle('hidden',!codigo);
   $('#comprovanteCard').classList.remove('hidden');
   recado('Assinatura registrada. Agora envie o comprovante pelo WhatsApp.');
   $('#comprovanteCard').scrollIntoView({behavior:'smooth',block:'start'});
@@ -369,7 +388,12 @@ function mostrarComprovante({nome,assinadoEm,imagem}){
 async function enviarComprovante(paraCliente){
   const imagem=$('#comprovanteImg').src;
   const nomeArquivo=`comprovante-coleta-${codigoColeta(dados)}.png`;
-  const mensagem=`Alex Transportes — comprovante da coleta #${codigoColeta(dados)} (${texto(dados?.sender)} → ${texto(dados?.recipient)}).`;
+  const salvo=lerLocal();
+  const assinadoEm=salvo.assinadoEm?new Date(salvo.assinadoEm):new Date();
+  const codigo=codigoConclusao(dados?.collectionNumber,assinadoEm);
+  const quem=texto(salvo.nome)?` Assinou: ${texto(salvo.nome)}.`:'';
+  const paraSistema=codigo?` Código para o sistema: ${codigo}.`:'';
+  const mensagem=`Alex Transportes — comprovante da coleta #${codigoColeta(dados)} (${texto(dados?.sender)} → ${texto(dados?.recipient)}).${quem}${paraSistema}`;
   try{
     const blob=await (await fetch(imagem)).blob();
     const arquivo=new File([blob],nomeArquivo,{type:'image/png'});
