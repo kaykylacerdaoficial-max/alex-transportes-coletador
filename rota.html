@@ -363,7 +363,7 @@ function abrir() {
   });
   estado.atuais = estado.enviadas.map(s => ({ ...s }));
   $('#titulo').textContent = `Rota de coletas${lido.date ? ` — ${lido.date}` : ''}`;
-  $('#subtitulo').textContent = `${estado.enviadas.length} parada(s) em Nova Serrana.`;
+  $('#subtitulo').textContent = `${estado.enviadas.length} parada(s) nesta rota.`;
   $('#blocoRota').classList.remove('hidden');
 
   /* Sem contexto seguro o botão não promete o que não pode cumprir: ele some
@@ -389,4 +389,3 @@ abrir();
 </script>
 </body>
 </html>
-
