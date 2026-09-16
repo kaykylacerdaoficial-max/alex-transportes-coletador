@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Assinatura da coleta</title>
+  <script src="config.js"></script>
+  <style>
+    /* ====================================================================
+       Mesma identidade visual do sistema (verde claro), aqui em uma página
+       que o comprador abre no celular. As cores ficam todas em :root: trocar
+       o tom aqui e no styles.css mantém as duas telas iguais.
+
+       Verde claro no fundo, branco nos cartões, verde médio na ação,
+       grafite no texto, vermelho só em erro. Todo par texto/fundo tem no
+       mínimo 4,5:1; borda de campo e anel de foco, no mínimo 3:1.
+       ==================================================================== */
+    :root{
+      --ink:#17252F;          /* texto principal */
+      --ink-soft:#4A5C68;     /* texto de apoio */
+      --ink-faint:#5E7080;    /* texto pequeno secundário */
+      --paper:#EDF6EF;        /* fundo verde claro */
+      --surface:#FFFFFF;      /* cartões */
+      --surface-green:#DFEFE4;/* botão secundário */
+      --line:#CBE0D1;
+      --line-soft:#DEEAE1;
+      --field-line:#6E9380;
+      --brand:#13462F;
+      --action:#1B6B45;       --action-hover:#145636;  --on-action:#FFFFFF;
+      --positive:#146B43;
+      --danger:#B3261E;
+      --focus:#2E8B60;
+      --radius:14px;
+      --shadow:0 1px 2px rgba(19,70,47,.05),0 6px 18px rgba(19,70,47,.06);
+      font-family:Arial,Helvetica,sans-serif;
+      color:var(--ink);
+      background:var(--paper);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--paper);color:var(--ink)}
+    .page{max-width:620px;margin:auto;padding:22px 16px 40px}
+    .brand{font-size:12px;font-weight:700;letter-spacing:.8px;color:var(--brand)}
+    .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:14px;box-shadow:var(--shadow)}
+    h1{font-size:24px;margin:8px 0}
+    h2{font-size:17px;margin:0 0 12px}
+    p{color:var(--ink-soft)}
+    .route{font-weight:700;color:var(--ink);font-size:18px}
+    .item{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line-soft);padding:10px 0}
+    .item:first-child{border:0}
+    .total{display:flex;justify-content:space-between;border-top:2px solid var(--ink);margin-top:10px;padding-top:10px;font-weight:700;font-size:17px}
+    .muted{font-size:13px;color:var(--ink-soft)}
+    label{display:grid;gap:6px;font-weight:700;font-size:14px}
+    input{width:100%;font:inherit;color:var(--ink);background:var(--surface);padding:12px;border:1px solid var(--field-line);border-radius:8px}
+    input::placeholder{color:var(--ink-faint)}
+    input:focus,button:focus-visible,canvas:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+    input:focus{border-color:var(--action)}
+    .signature{width:100%;height:180px;border:2px dashed var(--field-line);border-radius:10px;background:var(--surface);touch-action:none;margin-top:10px}
+    button{width:100%;border:0;border-radius:8px;padding:13px;font:700 16px Arial,Helvetica,sans-serif;background:var(--action);color:var(--on-action);margin-top:14px;cursor:pointer}
+    button:hover{background:var(--action-hover)}
+    button[disabled]{background:#E7EDE9;color:var(--ink-faint);cursor:not-allowed}
+    .secondary{background:var(--surface-green);color:var(--brand)}
+    .secondary:hover{background:#CFE7D7}
+    .hidden{display:none!important}
+    .error{color:var(--danger);font-weight:700}
+    .ok{color:var(--positive);font-weight:700}
+  </style>
+</head>
+<body><main class="page">
+  <div class="brand">ALEX TRANSPORTES</div><h1 id="title">Abrindo assinatura…</h1><p id="status">Aguarde um instante.</p>
+  <section class="card hidden" id="summary"><p class="route" id="route"></p><p class="muted" id="reference"></p><div id="items"></div><div class="total"><span>Total</span><strong id="grandTotal"></strong></div><p class="muted" id="freight"></p><p class="muted hidden" id="observation"></p></section>
+  <form class="card hidden" id="form"><h2>Assine para confirmar</h2><label>Nome de quem assina<input id="signerName" autocomplete="name" required></label><canvas id="signature" class="signature" width="900" height="330" aria-label="Área para assinatura"></canvas><button type="button" class="secondary" id="clear">Apagar assinatura</button><button type="submit">Confirmar assinatura</button><p class="muted">A assinatura fica ligada a esta coleta, com data e horário. Ela é um comprovante da operação, e não substitui documento fiscal.</p></form>
+</main><script>
+const $=s=>document.querySelector(s), config=window.SIGN_CONFIG||{};
+const token=new URLSearchParams(location.search).get('t');
+/* O link sai da barra de endereços assim que a página abre: ele vale uma vez
+   só e não precisa ficar exposto em foto de tela ou histórico. */
+if(token)history.replaceState(null,'',location.pathname);
+let signed=false,drawing=false,currentStroke=null;const strokes=[];
+const canvas=$('#signature'),ctx=canvas.getContext('2d');ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#17252F';
+function point(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
+canvas.addEventListener('pointerdown',e=>{drawing=true;signed=true;canvas.setPointerCapture(e.pointerId);const p=point(e);currentStroke=[p];strokes.push(currentStroke);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault()});
+canvas.addEventListener('pointermove',e=>{if(!drawing)return;const p=point(e);currentStroke.push(p);ctx.lineTo(p.x,p.y);ctx.stroke();e.preventDefault()});
+['pointerup','pointercancel'].forEach(n=>canvas.addEventListener(n,()=>{drawing=false;currentStroke=null}));
+$('#clear').onclick=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);signed=false;strokes.length=0};
+function money(v){return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)||0)}
+function texto(v){return String(v??'')}
+/* Texto que vira HTML passa por aqui antes: dado nunca vira marcação. */
+function esc(v){return texto(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function aviso(titulo,mensagem,classe){$('#title').textContent=titulo;$('#status').textContent=mensagem;$('#status').className=classe}
+/* O token vai no corpo do pedido, nunca no endereço: assim ele não aparece
+   em registro de servidor nem em histórico de navegação. */
+async function chamar(payload){
+  const r=await fetch(config.endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,...payload})});
+  let d={};try{d=await r.json()}catch{}
+  return{ok:r.ok,status:r.status,data:d};
+}
+async function load(){
+  if(!token||!config.endpoint){aviso('Link não configurado','Peça um novo link à transportadora.','error');return}
+  let r;
+  try{r=await chamar({action:'read'})}catch{aviso('Sem conexão','Verifique a internet do celular e abra o link de novo.','error');return}
+  if(r.data.state==='signed'){aviso('Assinatura já confirmada','Esta coleta já tem a assinatura registrada.','ok');return}
+  if(!r.ok){aviso('Link indisponível',r.data.error||'Peça um novo link à transportadora.','error');return}
+  const s=r.data.summary;
+  $('#title').textContent=r.data.purpose==='entrega'?'Confirmação de entrega':'Confirmação de coleta';
+  $('#status').textContent='Confira os dados antes de assinar.';$('#status').className='';
+  $('#route').textContent=`${texto(s.sender)} → ${texto(s.recipient)}`;
+  $('#reference').textContent=`Coleta #${String(s.collectionNumber??'—').padStart(4,'0')}${s.date?` · ${new Date(`${s.date}T12:00:00`).toLocaleDateString('pt-BR')}`:''}${s.noteNumber?` · Notinha ${texto(s.noteNumber)}`:''}`;
+  $('#items').innerHTML=s.items.map(i=>`<div class="item"><span>${esc(i.qty)} ${esc(i.unit)} · ${esc(i.product)}${i.pairs?` · ${esc(i.pairs)} pares`:''}</span><strong>${esc(money(i.total))}</strong></div>`).join('');
+  $('#grandTotal').textContent=money(s.items.reduce((t,i)=>t+(Number(i.total)||0),0));
+  $('#freight').textContent=`Frete recebido em: ${s.freight==='NS'?'Nova Serrana':'São Paulo'}`;
+  if(s.observation){$('#observation').textContent=`Observação: ${texto(s.observation)}`;$('#observation').classList.remove('hidden')}
+  $('#summary').classList.remove('hidden');$('#form').classList.remove('hidden');
+}
+$('#form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const signerName=$('#signerName').value.trim();
+  if(signerName.length<2||!signed){aviso($('#title').textContent,'Escreva o nome e faça a assinatura antes de confirmar.','error');return}
+  const button=$('#form button[type=submit]');button.disabled=true;button.textContent='Salvando…';
+  try{
+    const r=await chamar({action:'sign',signerName,signatureStrokes:strokes});
+    if(!r.ok)throw new Error(r.data.error||'Não foi possível salvar.');
+    $('#form').classList.add('hidden');
+    aviso('Assinatura confirmada','Obrigado. A transportadora recebeu a confirmação.','ok');
+  }catch(err){
+    aviso($('#title').textContent,err.message||'Não foi possível salvar. Tente novamente.','error');
+    button.disabled=false;button.textContent='Confirmar assinatura';
+  }
+});
+load();
+</script></body></html>
