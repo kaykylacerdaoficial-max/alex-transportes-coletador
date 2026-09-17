@@ -35,6 +35,8 @@
     *{box-sizing:border-box}
     body{margin:0;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.45}
     .page{max-width:620px;margin:auto;padding:16px 16px 48px}
+    .navigation{display:flex;gap:8px;margin-top:10px}
+    .navigation-button{width:auto;min-height:44px;margin-top:0;padding:10px 14px;font-size:15px}
     .brand{font-size:12px;font-weight:700;letter-spacing:.8px;color:var(--brand)}
     h1{font-size:23px;margin:6px 0 2px;line-height:1.25}
     h2{font-size:16px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft)}
@@ -73,7 +75,7 @@
     input:focus{border-color:var(--action);outline:3px solid var(--focus);outline-offset:2px}
     .signature{width:100%;height:190px;border:2px dashed var(--field-line);border-radius:10px;background:var(--surface);touch-action:none;margin-top:10px;display:block}
     .hidden{display:none!important}
-    @media(max-width:520px){.codigo-linha{grid-template-columns:1fr}.codigo-linha button{width:100%}}
+    @media(max-width:520px){.codigo-linha{grid-template-columns:1fr}.codigo-linha button{width:100%}.navigation-button{width:100%}}
     .error{color:var(--danger);font-weight:700}
     .ok{color:var(--positive);font-weight:700}
     .feedback{margin-top:10px;font-weight:700}
@@ -84,6 +86,9 @@
   <div class="brand">ALEX TRANSPORTES</div>
   <h1 id="title">Abrindo a coleta…</h1>
   <p id="status">Aguarde um instante.</p>
+  <nav class="navigation" aria-label="Navegação da coleta">
+    <button type="button" class="secondary navigation-button" id="voltar">Voltar à rota</button>
+  </nav>
 
   <div class="demo hidden" id="demoBanner">DEMONSTRAÇÃO — nada aqui é gravado
     <span>Esta tela serve para ver como o coletador vai usar o sistema. Os botões e a assinatura não salvam nada em lugar nenhum, porque a parte online ainda não foi configurada.</span></div>
@@ -202,6 +207,19 @@ function texto(v){return String(v??'')}
 function esc(v){return texto(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function aviso(titulo,mensagem,classe=''){$('#title').textContent=titulo;$('#status').textContent=mensagem;$('#status').className=classe}
 function recado(mensagem,classe='ok'){$('#feedback').textContent=mensagem;$('#feedback').className=`feedback ${classe}`}
+
+/* A rota abre a coleta nesta mesma aba. Assim a seta do celular e este botão
+   devolvem o motorista ao roteiro sem criar uma aba perdida. Se o link foi
+   aberto diretamente pelo WhatsApp, o retorno natural é para a conversa ou
+   para a página anterior do navegador. Uma assinatura em andamento pede
+   confirmação para não apagar trabalho feito com o dedo. */
+function voltarDaColeta(){
+  if(assinando&&!comprovanteAtual&&strokes.length&&!window.confirm('A assinatura ainda não foi confirmada. Sair e perder o que foi desenhado?'))return;
+  if(history.length>1){history.back();return;}
+  try{window.close()}catch{}
+  recado('Use a seta voltar do navegador para retornar à rota.','error');
+}
+$('#voltar').onclick=voltarDaColeta;
 
 /* O token vai no corpo do pedido, nunca no endereço: assim ele não aparece
    em registro de servidor nem no histórico do celular. */

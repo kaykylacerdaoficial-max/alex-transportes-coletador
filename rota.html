@@ -42,6 +42,8 @@
     *{box-sizing:border-box}
     body{margin:0;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.45}
     .page{max-width:620px;margin:auto;padding:18px 16px 40px}
+    .navigation{display:flex;gap:8px;margin-top:10px}
+    .navigation button{width:auto;min-height:44px;margin-top:0;padding:10px 14px;font-size:15px}
     .brand{font-size:12px;font-weight:700;letter-spacing:.8px;color:var(--brand)}
     h1{font-size:23px;margin:6px 0 2px;line-height:1.25}
     h2{font-size:16px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft)}
@@ -86,6 +88,9 @@
   <p class="brand">ALEX TRANSPORTES</p>
   <h1 id="titulo">Abrindo a rota…</h1>
   <p class="muted" id="subtitulo"></p>
+  <nav class="navigation" aria-label="Navegação da rota">
+    <button type="button" class="secondary" id="sairRota">Sair</button>
+  </nav>
 
   <p class="estado aviso hidden" id="semRota">
     Este link não traz nenhuma rota.
@@ -151,6 +156,7 @@ function expandirRota(valor) {
     date: texto(valor.d),
     stops: Array.isArray(valor.s) ? valor.s.map(parada => {
       const expandida = { sender: texto(parada?.n), address: texto(parada?.a) };
+      if (parada?.p && typeof parada.p === 'object') expandida.pickup = parada.p;
       const link = texto(parada?.u || parada?.link);
       if (link) expandida.link = link;
       const lat = Number(parada?.l), lon = Number(parada?.o);
@@ -300,14 +306,29 @@ function linkDaColeta(value){
   }catch{return ''}
 }
 
+function codificarBase64Url(textoOriginal){
+  /* `TextEncoder` falta em alguns navegadores antigos e em WebViews. Este
+     caminho usa as APIs de texto mais amplamente disponíveis; o resultado é
+     o mesmo Base64URL aceito por coleta.html. */
+  const binario=unescape(encodeURIComponent(String(textoOriginal)));
+  return btoa(binario).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
+}
+
+function linkDiretoDaParada(pickup){
+  if(!pickup||typeof pickup!=='object')return '';
+  const base=new URL('./coleta.html',location.href);
+  base.search='';base.hash='';
+  return `${base.origin}${base.pathname}#coleta=${codificarBase64Url(JSON.stringify(pickup))}`;
+}
+
 function desenhar() {
   const stops = estado.atuais;
   $('#lista').innerHTML = stops.map(s => {
     const endereco = texto(s.address) || 'sem endereço cadastrado';
     const falta = s.coords ? '' : ' · fora do cálculo por falta de endereço no mapa';
-    const link=linkDaColeta(s.link);
+    const link=linkDaColeta(s.link)||linkDiretoDaParada(s.pickup);
     const acao = link
-      ? `<a class="button secondary acao-parada" href="${escapar(link)}" target="_blank" rel="noopener noreferrer">Abrir coleta e assinar</a>`
+      ? `<a class="button secondary acao-parada" href="${escapar(link)}">Abrir coleta e assinar</a>`
       : '<small class="sem-link">Assinatura indisponível nesta parada. Peça à transportadora para gerar a rota novamente.</small>';
     return `<li><b><span class="numero"></span>${escapar(texto(s.sender) || 'Cliente')}</b>`
       + `<small class="${s.coords ? '' : 'sem-coord'}">${escapar(endereco)}${falta}</small>${acao}</li>`;
@@ -388,6 +409,11 @@ function voltarOrdemEnviada() {
   desenhar();
 }
 
+function sairDaRota(){
+  if(history.length>1){history.back();return;}
+  try{window.close()}catch{}
+}
+
 /* -------------------------------------------------------------- abertura */
 
 function abrir() {
@@ -405,6 +431,7 @@ function abrir() {
       sender: texto(s?.sender),
       address: texto(s?.address),
       link: texto(s?.link),
+      pickup: s?.pickup && typeof s.pickup === 'object' ? s.pickup : null,
       code: Number(s?.code) || 0,
       coords: Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null,
     };
@@ -433,6 +460,7 @@ function abrir() {
 
 $('#usarLocalizacao').addEventListener('click', pedirLocalizacao);
 $('#voltarOrdemEnviada').addEventListener('click', voltarOrdemEnviada);
+$('#sairRota').addEventListener('click', sairDaRota);
 abrir();
 </script>
 </body>
