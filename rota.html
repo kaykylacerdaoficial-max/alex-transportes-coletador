@@ -150,16 +150,20 @@ function decodificarBase64Url(valor) {
 function expandirRota(valor) {
   if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return null;
   if ('date' in valor || 'stops' in valor) {
-    return { date: texto(valor.date), stops: Array.isArray(valor.stops) ? valor.stops : [] };
+    return { date: texto(valor.date), gps: valor.gps === true, stops: Array.isArray(valor.stops) ? valor.stops : [] };
   }
   if (!('d' in valor) && !('s' in valor)) return null;
   return {
     date: texto(valor.d),
+    gps: valor.g === 1,
     stops: Array.isArray(valor.s) ? valor.s.map(parada => {
       const expandida = { sender: texto(parada?.n), address: texto(parada?.a) };
       if (parada?.p && typeof parada.p === 'object') expandida.pickup = parada.p;
       const link = texto(parada?.u || parada?.link);
       if (link) expandida.link = link;
+      /* `k` é o código curto da coleta online. Sem lê-lo, a parada online
+         ficava sem o botão de assinar. */
+      if (typeof parada?.k === 'string' && parada.k) expandida.token = parada.k;
       const lat = Number(parada?.l), lon = Number(parada?.o);
       if (Number.isFinite(lat) && Number.isFinite(lon)) { expandida.lat = lat; expandida.lon = lon; }
       const code = Number(parada?.c);
@@ -295,7 +299,7 @@ function explicarFalha(erro, { seguro = true, suportado = true } = {}) {
 
 /* ---------------------------------------------------------------- tela */
 
-const estado = { enviadas: [], atuais: [], origem: null, modo: 'enviada' };
+const estado = { enviadas: [], atuais: [], origem: null, modo: 'enviada', gps: false };
 /* O conteúdo do fragmento é dado não confiável: nunca executa javascript:
    nem manda o coletador assinar em outro domínio. */
 function linkDaColeta(value){
@@ -448,6 +452,7 @@ function abrir() {
     };
   });
   estado.atuais = estado.enviadas.map(s => ({ ...s }));
+  estado.gps = lido.gps === true;
   $('#titulo').textContent = `Rota de coletas${lido.date ? ` — ${lido.date}` : ''}`;
   $('#subtitulo').textContent = `${estado.enviadas.length} parada(s) nesta rota.`;
   $('#blocoRota').classList.remove('hidden');
@@ -467,6 +472,15 @@ function abrir() {
       + 'A ordem abaixo é a que a transportadora enviou. Peça a ela para cadastrar os endereços dos clientes.';
   }
   desenhar();
+  /* A transportadora pediu que a rota comece de onde o motorista estiver:
+     a localização é pedida já na abertura, sem esperar um toque. Se ele
+     negar ou o GPS falhar, a ordem enviada continua na tela, e o Google
+     Maps (sem origem) começa mesmo assim da posição do aparelho. */
+  if (estado.gps && !$('#usarLocalizacao').classList.contains('hidden')) {
+    $('#usarLocalizacao').textContent = 'Recalcular a partir de onde estou';
+    $('#explicacao').textContent = 'Esta rota começa de onde você estiver. O celular pede a sua localização para escolher a primeira parada; a posição fica somente neste celular.';
+    pedirLocalizacao();
+  }
 }
 
 $('#usarLocalizacao').addEventListener('click', pedirLocalizacao);
