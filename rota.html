@@ -307,6 +307,14 @@ function linkDaColeta(value){
   }catch{return ''}
 }
 
+function linkOnlineDaParada(token){
+  if(!/^[A-Za-z0-9_-]{20,100}$/.test(texto(token)))return '';
+  const base=new URL('./coleta.html',location.href);
+  base.search=`?t=${encodeURIComponent(texto(token))}`;
+  base.hash='';
+  return base.href;
+}
+
 function codificarBase64Url(textoOriginal){
   /* `TextEncoder` falta em alguns navegadores antigos e em WebViews. Este
      caminho usa as APIs de texto mais amplamente disponíveis; o resultado é
@@ -327,7 +335,7 @@ function desenhar() {
   $('#lista').innerHTML = stops.map(s => {
     const endereco = texto(s.address) || 'sem endereço cadastrado';
     const falta = s.coords ? '' : ' · fora do cálculo por falta de endereço no mapa';
-    const link=linkDaColeta(s.link)||linkDiretoDaParada(s.pickup);
+    const link=linkDaColeta(s.link)||linkOnlineDaParada(s.token)||linkDiretoDaParada(s.pickup);
     const acao = link
       ? `<a class="button secondary acao-parada" href="${escapar(link)}">Abrir coleta e assinar</a>`
       : '<small class="sem-link">Assinatura indisponível nesta parada. Peça à transportadora para gerar a rota novamente.</small>';
@@ -433,6 +441,7 @@ function abrir() {
       sender: texto(s?.sender),
       address: texto(s?.address),
       link: texto(s?.link),
+      token: texto(s?.token),
       pickup: s?.pickup && typeof s.pickup === 'object' ? s.pickup : null,
       code: Number(s?.code) || 0,
       coords: Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null,
