@@ -91,6 +91,7 @@
   <nav class="navigation" aria-label="Navegação da rota">
     <button type="button" class="secondary" id="sairRota">Sair</button>
   </nav>
+  <p class="feedback" id="feedbackRota" aria-live="polite"></p>
 
   <p class="estado aviso hidden" id="semRota">
     Este link não traz nenhuma rota.
@@ -412,6 +413,7 @@ function voltarOrdemEnviada() {
 function sairDaRota(){
   if(history.length>1){history.back();return;}
   try{window.close()}catch{}
+  $('#feedbackRota').textContent='Esta rota foi aberta diretamente. Use a seta voltar do navegador ou feche esta aba para sair.';
 }
 
 /* -------------------------------------------------------------- abertura */
