@@ -6,6 +6,10 @@
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow">
   <title>Rota de coletas — Alex Transportes</title>
+  <!-- `link-curto.js` abre o link curto e o compactado. `config.js` só existe
+       no site publicado e diz onde fica a base online. -->
+  <script src="link-curto.js" onerror="window.AlexLinkCurto=window.AlexLinkCurto||null"></script>
+  <script src="config.js" onerror="window.SIGN_CONFIG=window.SIGN_CONFIG||null"></script>
   <style>
     /* ====================================================================
        Rota do motorista — celular na mão, dentro do carro, com pressa.
@@ -175,6 +179,11 @@ function expandirRota(valor) {
 
 function lerLink(valor) {
   const t = String(valor || '');
+  const novo = window.AlexLinkCurto?.readHash(t);
+  if (novo?.tipo === 'compacto') {
+    const rota = expandirRota(window.AlexLinkCurto.unpack(novo.dados));
+    return rota ? { modo: 'direct', ...rota } : null;
+  }
   for (const [marca, modo] of [[ROTA, 'direct'], [ROTA_DEMO, 'demo']]) {
     const i = t.indexOf(marca);
     if (i < 0) continue;
@@ -430,8 +439,42 @@ function sairDaRota(){
 
 /* -------------------------------------------------------------- abertura */
 
-function abrir() {
-  const lido = lerLink(location.href);
+/* Link curto: a rota está cifrada na base; a chave veio no próprio link. */
+function enderecoDoLinkCurto() {
+  const assinatura = texto(window.SIGN_CONFIG?.endpoint);
+  return /\/functions\/v1\/sign$/.test(assinatura) ? assinatura.replace(/sign$/, 'link') : '';
+}
+async function abrirLinkCurto(curto) {
+  $('#titulo').textContent = 'Abrindo a rota…';
+  $('#subtitulo').textContent = '';
+  const falhar = motivo => {
+    $('#titulo').textContent = 'Rota não encontrada';
+    $('#semRota').innerHTML = `${escapar(motivo)}<span>Peça à transportadora que mande o link de novo.</span>`;
+    $('#semRota').classList.remove('hidden');
+  };
+  const endereco = enderecoDoLinkCurto();
+  if (!endereco) return falhar('Esta página não sabe onde buscar a rota.');
+  let resposta;
+  try {
+    const controle = new AbortController();
+    const prazo = setTimeout(() => controle.abort(), 15000);
+    const r = await fetch(endereco, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: curto.slug }), signal: controle.signal });
+    clearTimeout(prazo);
+    resposta = await r.json().catch(() => ({}));
+    if (!r.ok) return falhar(resposta.error || 'A rota não pôde ser aberta agora.');
+  } catch {
+    return falhar('Sem internet, a rota não abriu. Confira a conexão e toque no link de novo.');
+  }
+  const dados = await window.AlexLinkCurto.open(resposta.ciphertext, curto.key);
+  const rota = expandirRota(dados);
+  if (!rota) return falhar('Este link está incompleto ou foi alterado.');
+  abrir({ modo: 'direct', ...rota });
+}
+
+function abrir(lidoPronto) {
+  const curto = !lidoPronto && window.AlexLinkCurto?.readHash(location.href);
+  if (curto?.tipo === 'curto') { abrirLinkCurto(curto); return; }
+  const lido = lidoPronto || lerLink(location.href);
   if (!lido || !lido.stops.length) {
     $('#titulo').textContent = 'Rota não encontrada';
     $('#subtitulo').textContent = '';
