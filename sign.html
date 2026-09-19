@@ -87,7 +87,7 @@ const token=queryToken||hashToken;
    barra — apagá-lo aqui faria um simples F5 perder o link antes da pessoa
    conseguir assinar. */
 if(queryToken)history.replaceState(null,'',location.pathname+location.hash);
-let signed=false,drawing=false,currentStroke=null;const strokes=[];
+let signed=false,drawing=false,currentStroke=null,snapshotHash=null;const strokes=[];
 const canvas=$('#signature'),ctx=canvas.getContext('2d');ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#17252F';
 function point(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
 canvas.addEventListener('pointerdown',e=>{drawing=true;signed=true;canvas.setPointerCapture(e.pointerId);const p=point(e);currentStroke=[p];strokes.push(currentStroke);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault()});
@@ -133,6 +133,8 @@ async function load(){
   if(r.data.state==='signed'){mostrarComprovante(r.data.proof);return}
   if(!r.ok){aviso('Link indisponível',r.data.error||'Peça um novo link à transportadora.','error');return}
   const s=r.data.summary;
+  snapshotHash=r.data.snapshotHash;
+  if(!snapshotHash){aviso('Link indisponível','Não foi possível vincular os dados exibidos à assinatura. Recarregue o link.','error');return}
   $('#title').textContent=r.data.purpose==='entrega'?'Confirmação de entrega':'Confirmação de coleta';
   $('#status').textContent='Confira os dados antes de assinar.';$('#status').className='';
   $('#route').textContent=`${texto(s.sender)} → ${texto(s.recipient)}`;
@@ -149,9 +151,10 @@ $('#form').addEventListener('submit',async e=>{
   if(signerName.length<2||!signed){aviso($('#title').textContent,'Escreva o nome e faça a assinatura antes de confirmar.','error');return}
   const button=$('#form button[type=submit]');button.disabled=true;button.textContent='Salvando…';
   try{
-    const r=await chamar({action:'sign',signerName,signatureStrokes:strokes});
+    const r=await chamar({action:'sign',signerName,signatureStrokes:strokes,snapshotHash});
     if(!r.ok)throw new Error(r.data.error||'Não foi possível salvar.');
     $('#form').classList.add('hidden');
+    if(r.data.state==='signed'){mostrarComprovante(r.data.proof);return}
     aviso('Assinatura confirmada','Obrigado. A transportadora recebeu a confirmação.','ok');
   }catch(err){
     aviso($('#title').textContent,err.message||'Não foi possível salvar. Tente novamente.','error');
