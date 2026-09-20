@@ -176,7 +176,7 @@ const link=lerLink(location.hash);
 const demo=link?.modo==='demo'?link.dados:null;
 const direto=link?.modo==='direto'?link.dados:null;
 const online=!!(token&&config.endpoint);
-let dados=null, assinando=false, drawing=false, currentStroke=null;
+let dados=null, snapshotHash=null, assinando=false, drawing=false, currentStroke=null;
 let comprovanteAtual=null,localIdentity='';
 const strokes=[];
 
@@ -356,7 +356,7 @@ $('#confirmar').onclick=async e=>{
   }
   const botao=e.currentTarget;botao.disabled=true;botao.textContent='Salvando…';
   try{
-    const r=await chamar({action:'sign',signerName:nome,signatureStrokes:validos});
+    const r=await chamar({action:'sign',signerName:nome,signatureStrokes:validos,snapshotHash});
     if(!r.ok)throw new Error(r.data.error||'Não foi possível salvar.');
     const assinadoEm=new Date(r.data.signedAt||Date.now());
     const vetor=Array.isArray(r.data.signatureVector)?r.data.signatureVector:strokes;
@@ -550,6 +550,7 @@ async function abrir(){
   if(!r.ok){aviso('Link indisponível',r.data.error||'Peça um link novo à transportadora.','error');return}
   if(r.data.purpose!=='coleta'){aviso('Link de outra etapa','Este link é da entrega. Abra a página de assinatura da entrega.','error');return}
   aviso('Coleta','Confira os dados antes de carregar.');
+  snapshotHash=typeof r.data.snapshotHash==='string'?r.data.snapshotHash:null;
   mostrar(r.data.summary||{});
   if(r.data.state==='signed'){
     $('#iniciar').disabled=true;$('#conferida').disabled=true;
