@@ -9,6 +9,7 @@
   <!-- `config.js` só existe depois que o projeto online for ativado. Sem ele a
        página abre em demonstração e avisa, em cima de tudo, que nada é gravado. -->
   <script src="config.js" onerror="window.SIGN_CONFIG=window.SIGN_CONFIG||null"></script>
+  <script src="qrcode.js"></script>
   <style>
     /* ====================================================================
        Tela do coletador — celular na mão, muitas vezes no sol, com pressa.
@@ -392,11 +393,23 @@ function lerLocal(){try{const r=JSON.parse(localStorage.getItem(chaveLocal())||'
 function guardarLocal(parcial){try{localStorage.setItem(chaveLocal(),JSON.stringify({...lerLocal(),...parcial,identity:localIdentity}));return true}catch{recado(online?'A assinatura está na base, mas não coube uma cópia neste celular.':'Não foi possível guardar neste celular. Salve a imagem do comprovante antes de fechar a página.','error');return false}}
 const codigoColeta=s=>String(s?.collectionNumber??'').padStart(4,'0');
 const dataHora=d=>`${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`;
+function desenharPix(g,payload,x,y,size){
+  if(!payload||!window.qrcode)return false;
+  try{
+    const qr=window.qrcode(0,'M');qr.addData(String(payload));qr.make();
+    const n=qr.getModuleCount(),mod=size/n;
+    g.fillStyle='#FFFFFF';g.fillRect(x-12,y-12,size+24,size+24);
+    g.fillStyle='#000000';
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(qr.isDark(r,c))g.fillRect(x+c*mod,y+r*mod,Math.ceil(mod),Math.ceil(mod));
+    return true;
+  }catch{return false}
+}
 
 function montarComprovante(s,{nome,assinadoEm}){
   const W=1080,M=60,LINHA=46,itens=s.items||[];
+  const pix=s.payment?.side==='NS'&&s.payment?.payload?s.payment:null;
   const c=document.createElement('canvas');
-  c.width=W;c.height=1080+itens.length*LINHA;
+  c.width=W;c.height=1080+itens.length*LINHA+(pix?340:0);
   const g=c.getContext('2d');
   g.fillStyle='#FFFFFF';g.fillRect(0,0,W,c.height);
   g.fillStyle='#13462F';g.fillRect(0,0,W,120);
@@ -428,6 +441,17 @@ function montarComprovante(s,{nome,assinadoEm}){
   g.drawImage(canvas,box.x+(box.w-lw)/2,box.y+(box.h-lh)/2,lw,lh);
   y=box.y+box.h+56;
   escrever(`Assinado por: ${nome}`,32,'bold');
+  if(pix){
+    y+=10;
+    const qrSize=230,qrX=M,qrY=y;
+    if(desenharPix(g,pix.payload,qrX,qrY,qrSize)){
+      g.fillStyle='#17252F';g.font='bold 30px Arial';g.fillText('Pagar frete por Pix',qrX+qrSize+42,qrY+52);
+      g.font='28px Arial';g.fillText(money(pix.amount||s.total),qrX+qrSize+42,qrY+98);
+      g.fillStyle='#4A5C68';g.font='24px Arial';g.fillText(`Recebedor: ${texto(pix.merchant)||'Alex Transportes'}`.slice(0,45),qrX+qrSize+42,qrY+142);
+      g.fillText('Escaneie no aplicativo do banco.',qrX+qrSize+42,qrY+184);
+      y=qrY+qrSize+40;
+    }
+  }
   escrever('Comprovante operacional da coleta. Não substitui documento fiscal.',24,'','#5E7080');
   return c.toDataURL('image/png');
 }
