@@ -7,6 +7,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>Assinatura da coleta</title>
   <script src="config.js"></script>
+  <script src="qrcode.js"></script>
   <style>
     /* ====================================================================
        Mesma identidade visual do sistema (verde claro), aqui em uma página
@@ -71,7 +72,7 @@
   <div class="brand">ALEX TRANSPORTES</div><h1 id="title">Abrindo assinatura…</h1><p id="status">Aguarde um instante.</p>
   <section class="card hidden" id="summary"><p class="route" id="route"></p><p class="muted" id="reference"></p><div id="items"></div><div class="total"><span>Total</span><strong id="grandTotal"></strong></div><p class="muted" id="freight"></p><p class="muted hidden" id="observation"></p></section>
   <form class="card hidden" id="form"><h2>Assine para confirmar</h2><label>Nome de quem assina<input id="signerName" autocomplete="name" required></label><canvas id="signature" class="signature" width="900" height="330" aria-label="Área para assinatura"></canvas><button type="button" class="secondary" id="clear">Apagar assinatura</button><button type="submit">Confirmar assinatura</button><p class="muted">A assinatura fica ligada a esta coleta, com data e horário. Ela é um comprovante da operação, e não substitui documento fiscal.</p></form>
-  <section class="card hidden" id="proof"><h2>Comprovante</h2><p class="muted" id="proofSigner"></p><p class="muted" id="proofDate"></p><canvas id="proofCanvas" class="signature" width="900" height="330" aria-label="Assinatura registrada"></canvas></section>
+  <section class="card hidden" id="proof"><h2>Comprovante</h2><p class="muted" id="proofSigner"></p><p class="muted" id="proofDate"></p><canvas id="proofCanvas" class="signature" width="900" height="330" aria-label="Assinatura registrada"></canvas><div class="hidden" id="payment"><h2 style="margin-top:18px">Pagar frete por Pix</h2><canvas id="pixCanvas" width="320" height="320" style="display:block;max-width:260px;width:100%;height:auto;margin:12px auto;background:#fff"></canvas><p class="ok" id="pixAmount"></p><p class="muted" id="pixMerchant"></p><p class="muted">Escaneie no aplicativo do banco. O QR não marca pagamento automaticamente.</p></div></section>
 </main><script>
 const $=s=>document.querySelector(s), config=window.SIGN_CONFIG||{};
 /* O token pode chegar por query (?t=) ou por fragmento (#t=). O fragmento é
@@ -87,7 +88,7 @@ const token=queryToken||hashToken;
    barra — apagá-lo aqui faria um simples F5 perder o link antes da pessoa
    conseguir assinar. */
 if(queryToken)history.replaceState(null,'',location.pathname+location.hash);
-let signed=false,drawing=false,currentStroke=null,snapshotHash=null;const strokes=[];
+let signed=false,drawing=false,currentStroke=null,snapshotHash=null,summary=null;const strokes=[];
 const canvas=$('#signature'),ctx=canvas.getContext('2d');ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#17252F';
 function point(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
 canvas.addEventListener('pointerdown',e=>{drawing=true;signed=true;canvas.setPointerCapture(e.pointerId);const p=point(e);currentStroke=[p];strokes.push(currentStroke);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault()});
@@ -99,6 +100,19 @@ function texto(v){return String(v??'')}
 /* Texto que vira HTML passa por aqui antes: dado nunca vira marcação. */
 function esc(v){return texto(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function aviso(titulo,mensagem,classe){$('#title').textContent=titulo;$('#status').textContent=mensagem;$('#status').className=classe}
+function mostrarPix(){
+  const p=summary?.payment,box=$('#payment');
+  if(!p||p.side!=='SP'||!p.payload||!window.qrcode){box.classList.add('hidden');return}
+  try{
+    const qr=window.qrcode(0,'M');qr.addData(String(p.payload));qr.make();
+    const canvas=$('#pixCanvas'),g=canvas.getContext('2d'),n=qr.getModuleCount(),mod=canvas.width/n;
+    g.fillStyle='#fff';g.fillRect(0,0,canvas.width,canvas.height);g.fillStyle='#000';
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(qr.isDark(r,c))g.fillRect(c*mod,r*mod,Math.ceil(mod),Math.ceil(mod));
+    $('#pixAmount').textContent=money(p.amount);
+    $('#pixMerchant').textContent=p.merchant?'Recebedor: '+texto(p.merchant):'';
+    box.classList.remove('hidden');
+  }catch{box.classList.add('hidden')}
+}
 /* Reabrir um link já assinado não pode virar só "já confirmada": a pessoa
    pode precisar mostrar a assinatura de novo (ex.: o app fechou antes dela
    ver a tela de sucesso). O traçado guardado é redesenhado aqui, sem
@@ -118,6 +132,7 @@ function mostrarComprovante(proof){
     ctx.stroke();
   });
   $('#proof').classList.remove('hidden');
+  mostrarPix();
 }
 /* O token vai no corpo do pedido, nunca no endereço: assim ele não aparece
    em registro de servidor nem em histórico de navegação. */
@@ -130,9 +145,10 @@ async function load(){
   if(!token||!config.endpoint){aviso('Link não configurado','Peça um novo link à transportadora.','error');return}
   let r;
   try{r=await chamar({action:'read'})}catch{aviso('Sem conexão','Verifique a internet do celular e abra o link de novo.','error');return}
+  summary=r.data.summary||null;
   if(r.data.state==='signed'){mostrarComprovante(r.data.proof);return}
   if(!r.ok){aviso('Link indisponível',r.data.error||'Peça um novo link à transportadora.','error');return}
-  const s=r.data.summary;
+  const s=summary;
   snapshotHash=r.data.snapshotHash;
   if(!snapshotHash){aviso('Link indisponível','Não foi possível vincular os dados exibidos à assinatura. Recarregue o link.','error');return}
   $('#title').textContent=r.data.purpose==='entrega'?'Confirmação de entrega':'Confirmação de coleta';
@@ -154,7 +170,8 @@ $('#form').addEventListener('submit',async e=>{
     const r=await chamar({action:'sign',signerName,signatureStrokes:strokes,snapshotHash});
     if(!r.ok)throw new Error(r.data.error||'Não foi possível salvar.');
     $('#form').classList.add('hidden');
-    if(r.data.state==='signed'){mostrarComprovante(r.data.proof);return}
+    if(r.data.state==='signed'){summary=r.data.summary||summary;mostrarComprovante(r.data.proof);return}
+    mostrarComprovante({signerName:r.data.signerName||signerName,signatureVector:r.data.signatureVector||strokes,signedAt:r.data.signedAt||new Date().toISOString()});
     aviso('Assinatura confirmada','Obrigado. A transportadora recebeu a confirmação.','ok');
   }catch(err){
     aviso($('#title').textContent,err.message||'Não foi possível salvar. Tente novamente.','error');
