@@ -315,15 +315,19 @@ function linkDaColeta(value){
   try{
     const u=new URL(texto(value),location.href);
     const base=new URL('.',location.href);
-    return u.origin===base.origin&&u.pathname===`${base.pathname}coleta.html`
-      &&['https:','http:','file:'].includes(u.protocol)&&!u.username&&!u.password?u.href:'';
+    const valida=u.origin===base.origin&&u.pathname===`${base.pathname}coleta.html`
+      &&['https:','http:','file:'].includes(u.protocol)&&!u.username&&!u.password;
+    if(!valida)return '';
+    u.searchParams.set('from','route');
+    return u.href;
   }catch{return ''}
 }
 
 function linkOnlineDaParada(token){
   if(!/^[A-Za-z0-9_-]{20,100}$/.test(texto(token)))return '';
   const base=new URL('./coleta.html',location.href);
-  base.search=`?t=${encodeURIComponent(texto(token))}`;
+  base.searchParams.set('t',texto(token));
+  base.searchParams.set('from','route');
   base.hash='';
   return base.href;
 }
@@ -339,8 +343,8 @@ function codificarBase64Url(textoOriginal){
 function linkDiretoDaParada(pickup){
   if(!pickup||typeof pickup!=='object')return '';
   const base=new URL('./coleta.html',location.href);
-  base.search='';base.hash='';
-  return `${base.origin}${base.pathname}#coleta=${codificarBase64Url(JSON.stringify(pickup))}`;
+  base.searchParams.set('from','route');base.hash='';
+  return `${base.origin}${base.pathname}${base.search}#coleta=${codificarBase64Url(JSON.stringify(pickup))}`;
 }
 
 function desenhar() {
