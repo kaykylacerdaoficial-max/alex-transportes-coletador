@@ -461,7 +461,7 @@ function montarComprovante(s,{nome,assinadoEm}){
       const centro=qrX+qrSize/2;
       g.textAlign='center';
       g.fillStyle='#17252F';g.font='bold 25px Arial';
-      g.fillText(pix.side==='NS'?'Pix Nova Serrana':'Pix São Paulo',centro,qrY+qrSize+34);
+      g.fillText(pix.side==='NS'?'Pix Nova Serrana · Inter':'Pix São Paulo · Bradesco',centro,qrY+qrSize+34);
       g.font='23px Arial';g.fillText(money(pix.amount||s.total),centro,qrY+qrSize+66);
       g.fillStyle='#4A5C68';g.font='20px Arial';
       g.fillText(`TXID ${texto(pix.txid)||''}`.slice(0,32),centro,qrY+qrSize+96);
