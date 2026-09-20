@@ -94,7 +94,7 @@
   <h1 id="title">Abrindo a coleta…</h1>
   <p id="status">Aguarde um instante.</p>
   <nav class="navigation" aria-label="Navegação da coleta">
-    <button type="button" class="secondary navigation-button" id="voltar">Voltar à rota</button>
+    <button type="button" class="secondary navigation-button" id="voltar">Fechar coleta</button>
   </nav>
 
   <div class="demo hidden" id="demoBanner">DEMONSTRAÇÃO — nada aqui é gravado
@@ -171,7 +171,9 @@
      demonstração   — mesmo transporte, depois do "#demo=", e nada é gravado. */
 const $=s=>document.querySelector(s);
 const config=window.SIGN_CONFIG||{};
-const token=new URLSearchParams(location.search).get('t')||new URLSearchParams(location.hash.slice(1)).get('t');
+const query=new URLSearchParams(location.search);
+const token=query.get('t')||new URLSearchParams(location.hash.slice(1)).get('t');
+const veioDaRota=query.get('from')==='route';
 const link=lerLink(location.hash);
 const demo=link?.modo==='demo'?link.dados:null;
 const direto=link?.modo==='direto'?link.dados:null;
@@ -222,10 +224,11 @@ function recado(mensagem,classe='ok'){$('#feedback').textContent=mensagem;$('#fe
    confirmação para não apagar trabalho feito com o dedo. */
 function voltarDaColeta(){
   if(assinando&&!comprovanteAtual&&strokes.length&&!window.confirm('A assinatura ainda não foi confirmada. Sair e perder o que foi desenhado?'))return;
-  if(history.length>1){history.back();return;}
+  if(veioDaRota&&history.length>1){history.back();return;}
   try{window.close()}catch{}
-  recado('Use a seta voltar do navegador para retornar à rota.','error');
+  recado('Se esta aba não fechar sozinha, use o botão fechar do navegador.','error');
 }
+$('#voltar').textContent=veioDaRota?'Voltar à rota':'Fechar coleta';
 $('#voltar').onclick=voltarDaColeta;
 
 /* O token vai no corpo do pedido, nunca no endereço: assim ele não aparece
