@@ -116,7 +116,7 @@ function mostrarPix(){
     for(const p of payments){
       if(!p?.payload)continue;
       const card=document.createElement('div');card.className='pix-option';
-      const title=document.createElement('strong');title.textContent=p.side==='NS'?'Pix Nova Serrana':'Pix São Paulo';
+      const title=document.createElement('strong');title.textContent=p.side==='NS'?'Pix Nova Serrana · Inter':'Pix São Paulo · Bradesco';
       const canvas=document.createElement('canvas');canvas.width=320;canvas.height=320;
       const g=canvas.getContext('2d'),qr=window.qrcode(0,'M');qr.addData(String(p.payload));qr.make();
       const n=qr.getModuleCount(),mod=canvas.width/n;
