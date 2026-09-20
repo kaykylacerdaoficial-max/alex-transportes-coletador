@@ -511,6 +511,10 @@ $('#confirmar').onclick=async e=>{
     recado('Demonstração: a assinatura NÃO foi gravada. Para valer de verdade, é preciso configurar a parte online.','error');
     return;
   }
+  /* Antes de cruzar a rede, preserva a intenção assinada neste aparelho. Se
+     o ACK se perder ou a página recarregar, o mesmo token + snapshot permite
+     readback antes de qualquer reenvio; não inventamos uma segunda coleta. */
+  salvarAssinaturaPendente(nome,validos);
   const botao=e.currentTarget;botao.disabled=true;botao.textContent='Salvando…';
   try{
     const r=await chamar({action:'sign',signerName:nome,signatureStrokes:validos,snapshotHash});
@@ -655,6 +659,34 @@ function codigoConclusao(numero,quando){
   return `AT-${corpo}-${b36[soma%36]}`;
 }
 
+function salvarAssinaturaPendente(nome,vetor){
+  if(!online||!snapshotHash)return false;
+  return guardarLocal({pendingSignature:{nome,vetor,snapshotHash,savedAt:new Date().toISOString()}});
+}
+function restaurarAssinaturaPendente(){
+  if(!online)return false;
+  const pendente=lerLocal().pendingSignature;
+  if(!pendente)return false;
+  if(!snapshotHash||pendente.snapshotHash!==snapshotHash){
+    guardarLocal({pendingSignature:null});
+    recado('Os dados desta coleta mudaram desde a assinatura pendente. Por segurança, assine novamente antes de concluir.','error');
+    return false;
+  }
+  const nome=texto(pendente.nome).trim();
+  const vetor=Array.isArray(pendente.vetor)?pendente.vetor:[];
+  if(nome.length<2||!vetor.some(s=>Array.isArray(s)&&s.length>=2)){
+    guardarLocal({pendingSignature:null});
+    return false;
+  }
+  desenharVetor(vetor);
+  $('#signerName').value=nome;
+  assinando=true;
+  $('#assinaturaCard').classList.remove('hidden');
+  $('#verificarAssinatura').classList.remove('hidden');
+  recado('Há uma assinatura pendente neste celular. Primeiro vamos conferir se a base já a recebeu; só depois será seguro reenviar.','error');
+  return true;
+}
+
 function concluirAssinatura({nome,assinadoEm,vetor,recuperada=false,segura=true}){
   if(Array.isArray(vetor)&&vetor.length)desenharVetor(vetor);
   const imagem=montarComprovante(dados,{nome,assinadoEm});
@@ -667,6 +699,7 @@ function concluirAssinatura({nome,assinadoEm,vetor,recuperada=false,segura=true}
     assinadoEm:assinadoEm.toISOString(),
     imagem,
     signatureVector:Array.isArray(vetor)?vetor:strokes,
+    pendingSignature:null,
   });
   mostrarComprovante({nome,assinadoEm,imagem,conclusaoSegura:segura&&(online||guardado)});
   $('#verificarAssinatura').classList.add('hidden');
@@ -833,6 +866,10 @@ async function abrir(){
     aviso('Link não configurado','Peça um link novo à transportadora. A parte online ainda não foi ativada.','error');
     return;
   }
+  /* A identidade local usa só uma impressão do token, nunca o segredo bruto.
+     Assim uma assinatura pendente sobrevive a reload mesmo se a rede estiver
+     fora, e continua vinculada a esta coleta/link específico. */
+  localIdentity=`online:${hashLocal(token)}`;
   /* O token sai da query e fica no fragmento, que não vai ao servidor.
      Só metadados não secretos da posição na rota permanecem na query. */
   const rotaQuery=new URLSearchParams();
@@ -845,7 +882,10 @@ async function abrir(){
   history.replaceState(null,'',`${location.pathname}${busca?`?${busca}`:''}#t=${encodeURIComponent(token)}`);
   let r;
   try{r=await chamar({action:'read'})}catch{
-    aviso('Sem conexão','Nada foi apagado. Quando a internet voltar, abra este mesmo link novamente; se a coleta já tiver sido salva, ela aparecerá como concluída.','error');
+    const pendente=lerLocal().pendingSignature;
+    aviso('Sem conexão',pendente
+      ?'A assinatura pendente continua guardada neste celular. Quando a internet voltar, abra este mesmo link: o sistema confere a base antes de permitir qualquer reenvio.'
+      :'Nada foi apagado. Quando a internet voltar, abra este mesmo link novamente; se a coleta já tiver sido salva, ela aparecerá como concluída.','error');
     return;
   }
   if(!r.ok){aviso('Link indisponível',r.data.error||'Peça um link novo à transportadora.','error');return}
@@ -857,6 +897,7 @@ async function abrir(){
     aplicarLeituraAssinada(r);
     return;
   }
+  if(restaurarAssinaturaPendente())await verificarAssinaturaSalva();
 }
 abrir();
 </script></body></html>
