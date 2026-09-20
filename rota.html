@@ -83,6 +83,15 @@
     ol.paradas small{display:block;color:var(--ink-soft);font-size:14px;margin:2px 0 0 34px}
     ol.paradas small.sem-coord{color:var(--warn)}
     .acao-parada{margin:10px 0 0 34px;width:calc(100% - 34px);min-height:48px;padding:12px;font-size:15px}
+    ol.paradas li.concluida{opacity:.72}
+    ol.paradas li.concluida .numero{background:var(--positive)}
+    ol.paradas li.concluida .numero::before{content:'✓'}
+    ol.paradas li.proxima{background:var(--surface-soft);margin:0 -8px;padding:12px 8px;border-radius:10px}
+    .proxima-card{background:var(--surface-green);border:2px solid var(--action);border-radius:12px;padding:14px;margin:12px 0}
+    .proxima-card .kicker{margin:0;color:var(--brand);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}
+    .proxima-card strong{display:block;font-size:19px;margin-top:3px}
+    .proxima-card span{display:block;color:var(--ink-soft);font-size:14px;margin-top:3px}
+    .proxima-card .button{margin-top:10px}
     .distancia{margin:10px 0 0;font-size:14px;color:var(--ink-soft)}
     @media (max-width:400px){ .page{padding:12px 12px 40px} h1{font-size:21px} }
   </style>
@@ -105,22 +114,27 @@
   <section class="card hidden" id="blocoRota">
     <h2>Paradas</h2>
     <p class="estado" id="origem"></p>
+    <div class="proxima-card hidden" id="proximaRota">
+      <p class="kicker" id="proximaKicker">Próxima parada</p>
+      <strong id="proximaNome"></strong>
+      <span id="proximaEndereco"></span>
+      <a class="button" id="abrirProxima" href="#">Abrir próxima coleta</a>
+    </div>
     <ol class="paradas" id="lista"></ol>
     <p class="distancia hidden" id="distancia"></p>
-    <button type="button" class="secondary" id="usarLocalizacao">Opcional: recalcular pelo meu GPS</button>
+    <button type="button" class="secondary" id="usarLocalizacao">Recalcular a ordem pela minha localização</button>
     <p class="muted" id="explicacao">
-      A ordem acima já está pronta. Abra a rota no aplicativo de mapas abaixo.
-      Se quiser, use o GPS do aparelho para recalcular a primeira parada; isso
-      é opcional e a localização fica somente neste celular.
+      O GPS é opcional. Sem ele, você pode seguir normalmente a ordem planejada.
+      Recalcular muda apenas a ordem das paradas; abrir no mapa usa a ordem que está na tela.
     </p>
-    <button type="button" class="secondary hidden" id="voltarOrdemEnviada">Voltar à ordem enviada pela transportadora</button>
+    <button type="button" class="secondary hidden" id="voltarOrdemEnviada">Voltar à ordem planejada</button>
   </section>
 
   <section class="card hidden" id="blocoMapa">
-    <h2>Abrir no mapa</h2>
+    <h2>Navegação</h2>
     <div id="linksMapa"></div>
-    <p class="muted">O mapa abre no aplicativo do celular. A ordem das paradas
-      é a da lista acima.</p>
+    <p class="muted">Abrir no mapa não recalcula a rota. O aplicativo de mapas
+      recebe exatamente a ordem que aparece acima.</p>
   </section>
 </main>
 
@@ -143,6 +157,78 @@ const texto = s => String(s ?? '').trim().replace(/\s+/g, ' ');
 
 const ROTA = '#rota=';
 const ROTA_DEMO = '#rotademo=';
+const ROTA_PROGRESSO = 'alex-rota-progresso-v1-';
+const ROTA_AVANCO = 'alex-rota-avanco-v1';
+const ROTA_ATIVA = 'alex-rota-ativa-v1-';
+const ROTA_RETORNO = 'alex-rota-retorno-v1-';
+const ROTA_CACHE = 'alex-rota-cache-v1-';
+
+function hashCurto(valor){
+  let h=2166136261;
+  for(const c of String(valor||'')){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}
+  return (h>>>0).toString(36);
+}
+function idParada(s){
+  const code=Number(s?.code||s?.collectionNumber)||0;
+  if(code)return `c${code}`;
+  return `p${hashCurto(`${texto(s?.sender)}|${texto(s?.address)}`)}`;
+}
+function idRota(date,stops){
+  const ids=(stops||[]).map(idParada).sort();
+  return `r${hashCurto(`${texto(date)}|${ids.join('|')}`)}`;
+}
+function progressoDaRota(){
+  if(!estado.id)return new Set();
+  try{
+    const salvo=JSON.parse(localStorage.getItem(ROTA_PROGRESSO+estado.id)||'{}');
+    return new Set(Object.keys(salvo.completed||{}));
+  }catch{return new Set()}
+}
+function linkComContextoRota(link,parada,posicao,total){
+  if(!link)return '';
+  try{
+    const u=new URL(link,location.href);
+    u.searchParams.set('rid',estado.id);
+    u.searchParams.set('sid',parada.id);
+    u.searchParams.set('rp',String(posicao||1));
+    u.searchParams.set('rt',String(total||estado.atuais.length||1));
+    return u.href;
+  }catch{return link}
+}
+function linkBaseDaParada(s){
+  return linkDaColeta(s.link)||linkOnlineDaParada(s.token)||linkDiretoDaParada(s.pickup);
+}
+function marcarRotaAtiva(){
+  if(!estado.id)return;
+  try{
+    sessionStorage.setItem(ROTA_ATIVA+estado.id,'1');
+    /* O endereço de retorno pode conter a chave da rota curta. Por isso ele
+       fica só no sessionStorage desta aba e nunca no armazenamento permanente. */
+    sessionStorage.setItem(ROTA_RETORNO+estado.id,location.href);
+  }catch{}
+}
+function consumirAvanco(){
+  if(!estado.id)return false;
+  let pedido=null;
+  try{pedido=JSON.parse(sessionStorage.getItem(ROTA_AVANCO)||'null')}catch{}
+  if(!pedido||pedido.routeId!==estado.id)return false;
+  try{sessionStorage.removeItem(ROTA_AVANCO)}catch{}
+  const concluidas=progressoDaRota();
+  const atual=estado.atuais.findIndex(s=>s.id===pedido.afterId);
+  const candidatos=atual>=0
+    ?[...estado.atuais.slice(atual+1),...estado.atuais.slice(0,atual)]
+    :[...estado.atuais];
+  const proxima=candidatos.find(s=>!concluidas.has(s.id));
+  if(!proxima)return true;
+  const posicao=estado.atuais.findIndex(s=>s.id===proxima.id)+1;
+  const link=linkComContextoRota(linkBaseDaParada(proxima),proxima,posicao,estado.atuais.length);
+  if(!link){
+    $('#feedbackRota').textContent='A próxima parada não tem link de coleta. A ordem continua disponível abaixo.';
+    return true;
+  }
+  location.replace(link);
+  return true;
+}
 
 function decodificarBase64Url(valor) {
   const normalizado = String(valor || '').replaceAll('-', '+').replaceAll('_', '/');
@@ -290,25 +376,25 @@ function linksDoMapa(stops, origem) {
    motorista desistir e ligar para a transportadora; aqui cada falha diz o
    que houve e o que fazer agora. */
 const MOTIVOS = {
-  1: { motivo: 'A permissão de localização foi negada neste aparelho.',
-       saida: 'Toque no cadeado ao lado do endereço, ligue "Localização" e abra o link de novo. Ou use a ordem enviada pela transportadora, aqui embaixo.' },
-  2: { motivo: 'O aparelho não conseguiu descobrir onde você está.',
-       saida: 'Saia de baixo de cobertura, confira se o GPS está ligado e tente de novo. A ordem enviada pela transportadora continua valendo.' },
-  3: { motivo: 'O aparelho demorou demais para achar a localização.',
-       saida: 'Tente de novo em um lugar aberto. Enquanto isso, siga a ordem enviada pela transportadora.' },
+  1: { motivo: 'O celular não liberou sua localização.',
+       saida: 'Você pode continuar normalmente pela ordem planejada. Se quiser recalcular, libere Localização para este site nas configurações do navegador e tente novamente.' },
+  2: { motivo: 'Não conseguimos encontrar sua localização agora.',
+       saida: 'Você pode continuar pela ordem planejada. Se quiser recalcular, confira o GPS, vá para um lugar aberto e tente novamente.' },
+  3: { motivo: 'A localização demorou demais.',
+       saida: 'Você pode continuar pela ordem planejada. Se quiser recalcular, tente novamente em um lugar aberto.' },
 };
 
 function explicarFalha(erro, { seguro = true, suportado = true } = {}) {
-  if (!suportado) return { motivo: 'Este navegador não sabe informar a localização.', saida: 'Abra o link no Chrome ou no Safari do celular. A ordem enviada pela transportadora continua valendo.' };
-  if (!seguro) return { motivo: 'Esta página não está em endereço seguro (https), e por isso o celular não libera a localização.', saida: 'Peça à transportadora o link publicado, que começa com https. A ordem enviada por ela continua valendo.' };
+  if (!suportado) return { motivo: 'Este navegador não oferece localização.', saida: 'A rota continua funcionando pela ordem planejada. Se quiser usar o GPS, abra este link no Chrome ou Safari.' };
+  if (!seguro) return { motivo: 'Este link não pode usar a localização do celular.', saida: 'A rota continua funcionando pela ordem planejada. Para usar o GPS, abra o link publicado pela transportadora.' };
   const conhecido = MOTIVOS[Number(erro?.code)];
   if (conhecido) return conhecido;
-  return { motivo: 'Não foi possível pegar a localização agora.', saida: 'Tente de novo. Se não vier, siga a ordem enviada pela transportadora.' };
+  return { motivo: 'Não conseguimos usar sua localização agora.', saida: 'A rota continua funcionando pela ordem planejada. Se quiser, tente novamente.' };
 }
 
 /* ---------------------------------------------------------------- tela */
 
-const estado = { enviadas: [], atuais: [], origem: null, modo: 'enviada', gps: false };
+const estado = { enviadas: [], atuais: [], origem: null, modo: 'enviada', gps: false, id: '', date: '', offline: false };
 /* O conteúdo do fragmento é dado não confiável: nunca executa javascript:
    nem manda o coletador assinar em outro domínio. */
 function linkDaColeta(value){
@@ -326,9 +412,8 @@ function linkDaColeta(value){
 function linkOnlineDaParada(token){
   if(!/^[A-Za-z0-9_-]{20,100}$/.test(texto(token)))return '';
   const base=new URL('./coleta.html',location.href);
-  base.searchParams.set('t',texto(token));
   base.searchParams.set('from','route');
-  base.hash='';
+  base.hash=`t=${encodeURIComponent(texto(token))}`;
   return base.href;
 }
 
@@ -349,38 +434,69 @@ function linkDiretoDaParada(pickup){
 
 function desenhar() {
   const stops = estado.atuais;
-  $('#lista').innerHTML = stops.map(s => {
+  const concluidas = progressoDaRota();
+  const pendentes = stops.filter(s => !concluidas.has(s.id));
+  const proxima = pendentes[0] || null;
+  const feitas = stops.length - pendentes.length;
+  $('#subtitulo').textContent = `${stops.length} parada(s) · ${feitas} concluída(s) · ${pendentes.length} restante(s).`;
+
+  $('#lista').innerHTML = stops.map((s,index) => {
     const endereco = texto(s.address) || 'sem endereço cadastrado';
     const falta = s.coords ? '' : ' · fora do cálculo por falta de endereço no mapa';
-    const link=linkDaColeta(s.link)||linkOnlineDaParada(s.token)||linkDiretoDaParada(s.pickup);
+    const concluida = concluidas.has(s.id);
+    const ehProxima = proxima?.id === s.id;
+    const link = linkComContextoRota(linkBaseDaParada(s), s, index + 1, stops.length);
+    const semLink = estado.offline
+      ? 'Sem internet: a ordem continua disponível. Quando a conexão voltar, abra este link novamente para registrar a coleta.'
+      : 'Coleta indisponível nesta parada. Peça à transportadora para gerar a rota novamente.';
     const acao = link
-      ? `<a class="button secondary acao-parada" href="${escapar(link)}">Abrir coleta e assinar</a>`
-      : '<small class="sem-link">Assinatura indisponível nesta parada. Peça à transportadora para gerar a rota novamente.</small>';
-    return `<li><b><span class="numero"></span>${escapar(texto(s.sender) || 'Cliente')}</b>`
-      + `<small class="${s.coords ? '' : 'sem-coord'}">${escapar(endereco)}${falta}</small>${acao}</li>`;
+      ? `<a class="button secondary acao-parada" href="${escapar(link)}">${concluida ? 'Rever coleta' : ehProxima ? 'Abrir próxima coleta' : 'Abrir coleta'}</a>`
+      : `<small class="sem-link">${escapar(semLink)}</small>`;
+    const status = concluida ? '<small>✓ Coleta concluída</small>' : '';
+    const classes = [concluida ? 'concluida' : '', ehProxima ? 'proxima' : ''].filter(Boolean).join(' ');
+    return `<li class="${classes}"><b><span class="numero"></span>${escapar(texto(s.sender) || 'Cliente')}</b>`
+      + `<small class="${s.coords ? '' : 'sem-coord'}">${escapar(endereco)}${falta}</small>${status}${acao}</li>`;
   }).join('');
+
+  const card = $('#proximaRota');
+  card.classList.remove('hidden');
+  if (proxima) {
+    const posicao = stops.findIndex(s => s.id === proxima.id) + 1;
+    $('#proximaKicker').textContent = `Próxima parada · ${posicao} de ${stops.length}`;
+    $('#proximaNome').textContent = texto(proxima.sender) || 'Cliente';
+    $('#proximaEndereco').textContent = texto(proxima.address) || 'Endereço não cadastrado';
+    const link = linkComContextoRota(linkBaseDaParada(proxima), proxima, posicao, stops.length);
+    $('#abrirProxima').classList.toggle('hidden', !link);
+    $('#abrirProxima').href = link || '#';
+    $('#abrirProxima').textContent = feitas ? 'Continuar rota' : 'Começar primeira coleta';
+  } else {
+    $('#proximaKicker').textContent = 'Rota concluída';
+    $('#proximaNome').textContent = 'Todas as coletas foram concluídas.';
+    $('#proximaEndereco').textContent = 'Você pode revisar qualquer parada abaixo, se precisar.';
+    $('#abrirProxima').classList.add('hidden');
+  }
 
   const semCoord = stops.filter(s => !s.coords).length;
   const caixa = $('#origem');
   if (estado.modo === 'gps') {
     caixa.className = 'estado ok';
-    caixa.innerHTML = 'Ordem calculada a partir de onde você está agora.'
-      + `<span>Começando pela parada mais perto de você.${semCoord ? ` ${semCoord} parada(s) sem endereço no mapa ficaram no fim.` : ''}</span>`;
+    caixa.innerHTML = 'Ordem recalculada pela sua localização.'
+      + `<span>A primeira parada é a mais próxima de onde você estava ao recalcular.${semCoord ? ` ${semCoord} parada(s) sem endereço no mapa ficaram no fim.` : ''}</span>`;
     const km = ordenar(stops.map(s => ({ ...s })), estado.origem).km;
     $('#distancia').textContent = `Cerca de ${km.toLocaleString('pt-BR')} km em linha reta entre as paradas. É uma estimativa para ordenar — a distância pela estrada é maior.`;
     $('#distancia').classList.remove('hidden');
     $('#voltarOrdemEnviada').classList.remove('hidden');
   } else {
     caixa.className = 'estado aviso';
-    caixa.innerHTML = 'Esta é a ordem enviada pela transportadora.'
-      + `<span>Ela ainda não leva em conta onde você está.${semCoord ? ` ${semCoord} parada(s) estão sem endereço no mapa.` : ''}</span>`;
+    caixa.innerHTML = 'Ordem planejada pela transportadora.'
+      + `<span>Você pode trabalhar normalmente assim, sem usar o GPS.${semCoord ? ` ${semCoord} parada(s) estão sem endereço no mapa.` : ''}</span>`;
     $('#distancia').classList.add('hidden');
     $('#voltarOrdemEnviada').classList.add('hidden');
   }
 
-  const urls = linksDoMapa(stops, estado.modo === 'gps' && estado.origem ? `${estado.origem.lat},${estado.origem.lon}` : '');
+  const urls = linksDoMapa(pendentes, estado.modo === 'gps' && estado.origem ? `${estado.origem.lat},${estado.origem.lon}` : '');
   $('#linksMapa').innerHTML = urls.map((u, i) =>
-    `<a class="button" href="${escapar(u)}" target="_blank" rel="noopener noreferrer">Abrir no Google Maps${urls.length > 1 ? ` — parte ${i + 1}` : ''}</a>`).join('');
+    `<a class="button" href="${escapar(u)}" target="_blank" rel="noopener noreferrer">Abrir rota no Google Maps${urls.length > 1 ? ` — parte ${i + 1}` : ''}</a>`).join('');
   $('#blocoMapa').classList.toggle('hidden', !urls.length);
 }
 
@@ -390,10 +506,9 @@ function escapar(s) {
 
 function avisarFalha({ motivo, saida }) {
   const caixa = $('#origem');
-  caixa.className = 'estado erro';
+  caixa.className = 'estado aviso';
   caixa.innerHTML = `${escapar(motivo)}<span>${escapar(saida)}</span>`;
-  $('#distancia').classList.add('hidden');
-  $('#voltarOrdemEnviada').classList.add('hidden');
+  if (estado.modo !== 'gps') $('#distancia').classList.add('hidden');
 }
 
 /* O contexto seguro é o que decide se o GPS existe. Arquivo aberto do
@@ -407,22 +522,25 @@ function pedirLocalizacao() {
   if (!temGeolocalizacao()) { avisarFalha(explicarFalha(null, { suportado: false })); return; }
   if (!contextoSeguro()) { avisarFalha(explicarFalha(null, { seguro: false })); return; }
   botao.disabled = true;
-  botao.textContent = 'Procurando sua localização…';
-  const terminar = () => { botao.disabled = false; botao.textContent = 'Recalcular a partir de onde estou'; };
+  botao.textContent = 'Buscando sua localização…';
+  const terminar = textoBotao => { botao.disabled = false; botao.textContent = textoBotao; };
   navigator.geolocation.getCurrentPosition(
     pos => {
       const lat = Number(pos?.coords?.latitude);
       const lon = Number(pos?.coords?.longitude);
-      terminar();
+      terminar('Recalcular a partir de onde estou');
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) { avisarFalha(explicarFalha({ code: 2 })); return; }
       estado.origem = { lat, lon };
       estado.modo = 'gps';
-      /* A ordem é recalculada A PARTIR DA POSIÇÃO DO MOTORISTA — nunca da
-         origem digitada no computador da transportadora. */
-      estado.atuais = ordenar(estado.enviadas.map(s => ({ ...s })), estado.origem).order;
+      /* Parada já concluída não volta para a frente da fila. O GPS só
+         reorganiza o trabalho que ainda falta. */
+      const concluidas=progressoDaRota();
+      const feitas=estado.enviadas.filter(s=>concluidas.has(s.id)).map(s=>({...s}));
+      const faltam=estado.enviadas.filter(s=>!concluidas.has(s.id)).map(s=>({...s}));
+      estado.atuais=[...feitas,...ordenar(faltam, estado.origem).order];
       desenhar();
     },
-    erro => { terminar(); avisarFalha(explicarFalha(erro)); },
+    erro => { terminar('Tentar localização novamente'); avisarFalha(explicarFalha(erro)); },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
   );
 }
@@ -431,7 +549,7 @@ function voltarOrdemEnviada() {
   estado.modo = 'enviada';
   estado.origem = null;
   estado.atuais = estado.enviadas.map(s => ({ ...s }));
-  $('#usarLocalizacao').textContent = 'Usar minha localização';
+  $('#usarLocalizacao').textContent = 'Recalcular a ordem pela minha localização';
   desenhar();
 }
 
@@ -451,13 +569,23 @@ function enderecoDoLinkCurto() {
 async function abrirLinkCurto(curto) {
   $('#titulo').textContent = 'Abrindo a rota…';
   $('#subtitulo').textContent = '';
+  const chaveCache = ROTA_CACHE + curto.slug;
+  const abrirCache = () => {
+    try {
+      const salvo = JSON.parse(sessionStorage.getItem(chaveCache) || 'null');
+      if (!salvo?.stops?.length) return false;
+      abrir({ ...salvo, offline: true });
+      $('#feedbackRota').textContent = 'Sem internet agora. A ordem e o progresso que já estavam neste celular continuam visíveis. Para registrar outra coleta, recupere a conexão e abra este link novamente.';
+      return true;
+    } catch { return false; }
+  };
   const falhar = motivo => {
     $('#titulo').textContent = 'Rota não encontrada';
-    $('#semRota').innerHTML = `${escapar(motivo)}<span>Peça à transportadora que mande o link de novo.</span>`;
+    $('#semRota').innerHTML = `${escapar(motivo)}<span>Seu progresso não foi apagado. Quando a internet voltar, abra este mesmo link novamente.</span>`;
     $('#semRota').classList.remove('hidden');
   };
   const endereco = enderecoDoLinkCurto();
-  if (!endereco) return falhar('Esta página não sabe onde buscar a rota.');
+  if (!endereco) { if (abrirCache()) return; return falhar('Não foi possível carregar a rota agora.'); }
   let resposta;
   try {
     const controle = new AbortController();
@@ -465,14 +593,30 @@ async function abrirLinkCurto(curto) {
     const r = await fetch(endereco, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: curto.slug }), signal: controle.signal });
     clearTimeout(prazo);
     resposta = await r.json().catch(() => ({}));
-    if (!r.ok) return falhar(resposta.error || 'A rota não pôde ser aberta agora.');
+    if (!r.ok) { if (abrirCache()) return; return falhar(resposta.error || 'A rota não pôde ser aberta agora.'); }
   } catch {
-    return falhar('Sem internet, a rota não abriu. Confira a conexão e toque no link de novo.');
+    if (abrirCache()) return;
+    return falhar('Sem internet para abrir esta rota.');
   }
   const dados = await window.AlexLinkCurto.open(resposta.ciphertext, curto.key);
   const rota = expandirRota(dados);
   if (!rota) return falhar('Este link está incompleto ou foi alterado.');
-  abrir({ modo: 'direct', ...rota });
+  const pronta = { modo: 'direct', ...rota };
+  /* Cache de retomada não guarda token nem retrato de coleta: só o mínimo
+     para o motorista não perder a ordem se a conexão cair e a página recarregar. */
+  try {
+    sessionStorage.setItem(chaveCache, JSON.stringify({
+      modo: 'cache',
+      date: pronta.date,
+      gps: pronta.gps,
+      stops: pronta.stops.map(s => ({
+        sender: texto(s?.sender), address: texto(s?.address), code: Number(s?.code) || 0,
+        lat: Number.isFinite(Number(s?.lat)) ? Number(s.lat) : undefined,
+        lon: Number.isFinite(Number(s?.lon)) ? Number(s.lon) : undefined,
+      })),
+    }));
+  } catch {}
+  abrir(pronta);
 }
 
 function abrir(lidoPronto) {
@@ -485,10 +629,11 @@ function abrir(lidoPronto) {
     $('#semRota').classList.remove('hidden');
     return;
   }
+  estado.date = texto(lido.date);
   estado.enviadas = lido.stops.map(s => {
     const lat = Number(s?.lat);
     const lon = Number(s?.lon);
-    return {
+    const parada = {
       sender: texto(s?.sender),
       address: texto(s?.address),
       link: texto(s?.link),
@@ -497,15 +642,18 @@ function abrir(lidoPronto) {
       code: Number(s?.code) || 0,
       coords: Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null,
     };
+    parada.id = idParada(parada);
+    return parada;
   });
+  estado.id = idRota(estado.date, estado.enviadas);
   estado.atuais = estado.enviadas.map(s => ({ ...s }));
   estado.gps = lido.gps === true;
-  $('#titulo').textContent = `Rota de coletas${lido.date ? ` — ${lido.date}` : ''}`;
-  $('#subtitulo').textContent = `${estado.enviadas.length} parada(s) nesta rota.`;
+  estado.offline = lido.offline === true;
+  $('#titulo').textContent = `Rota de coletas${estado.date ? ` — ${estado.date}` : ''}`;
   $('#blocoRota').classList.remove('hidden');
 
-  /* Sem contexto seguro o botão não promete o que não pode cumprir: ele some
-     e a tela explica por quê, em vez de falhar depois do toque. */
+  /* GPS é melhoria, não gate. Se o navegador não puder oferecer localização,
+     a rota planejada continua sendo o caminho principal. */
   if (!temGeolocalizacao() || !contextoSeguro()) {
     const falha = explicarFalha(null, { seguro: contextoSeguro(), suportado: temGeolocalizacao() });
     $('#usarLocalizacao').classList.add('hidden');
@@ -515,24 +663,28 @@ function abrir(lidoPronto) {
     /* Sem nenhuma coordenada não há o que recalcular: o GPS acharia o
        motorista e não teria com o que comparar. */
     $('#usarLocalizacao').classList.add('hidden');
-    $('#explicacao').innerHTML = '<b>Nenhuma parada desta rota tem endereço localizado no mapa.</b> '
-      + 'A ordem abaixo é a que a transportadora enviou. Peça a ela para cadastrar os endereços dos clientes.';
+    $('#explicacao').innerHTML = '<b>Não dá para recalcular esta rota pelo GPS.</b> '
+      + 'As paradas ainda não têm localização cadastrada no mapa. Você pode seguir normalmente a ordem planejada abaixo.';
   }
   desenhar();
-  /* A transportadora pediu que a rota comece de onde o motorista estiver:
-     a localização é pedida já na abertura, sem esperar um toque. Se ele
-     negar ou o GPS falhar, a ordem enviada continua na tela, e o Google
-     Maps (sem origem) começa mesmo assim da posição do aparelho. */
+  /* GPS melhora a rota, mas nunca é requisito silencioso. Mesmo quando a
+     transportadora sugeriu começar de onde o motorista estiver, quem decide
+     liberar a localização é o motorista, por um toque explícito. */
   if (estado.gps && !$('#usarLocalizacao').classList.contains('hidden')) {
-    $('#usarLocalizacao').textContent = 'Recalcular a partir de onde estou';
-    $('#explicacao').textContent = 'Esta rota começa de onde você estiver. O celular pede a sua localização para escolher a primeira parada; a posição fica somente neste celular.';
-    pedirLocalizacao();
+    $('#usarLocalizacao').textContent = 'Usar minha localização (opcional)';
+    $('#explicacao').textContent = 'A transportadora sugeriu recalcular a partir de onde você está. Isso é opcional: sem GPS, siga normalmente a ordem planejada.';
   }
+  marcarRotaAtiva();
+  setTimeout(consumirAvanco,0);
 }
 
 $('#usarLocalizacao').addEventListener('click', pedirLocalizacao);
 $('#voltarOrdemEnviada').addEventListener('click', voltarOrdemEnviada);
 $('#sairRota').addEventListener('click', sairDaRota);
+/* Voltar do navegador pode restaurar a página pelo BFCache sem executar
+   abrir() de novo. Relendo o progresso no pageshow, a rota não volta a
+   parecer pendente depois que a coleta já foi concluída. */
+window.addEventListener('pageshow',()=>{if(estado.id){desenhar();marcarRotaAtiva();setTimeout(consumirAvanco,0)}});
 abrir();
 </script>
 </body>

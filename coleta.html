@@ -78,6 +78,16 @@
     .secondary{background:var(--surface-green);color:var(--brand)}
     .secondary:hover{background:#CFE7D7}
     .done{background:var(--surface-soft);color:var(--positive);border:2px solid var(--positive)}
+    .conclusao-card{border:2px solid var(--positive);background:var(--surface)}
+    .conclusao-title{font-size:22px;font-weight:800;color:var(--positive);margin:0 0 8px}
+    .checklist{display:grid;gap:5px;margin:8px 0 14px}
+    .checklist p{margin:0;color:var(--positive);font-weight:700}
+    .checklist p.pending{color:var(--warn)}
+    .proxima-box{background:var(--surface-green);border-radius:12px;padding:13px;margin-top:12px}
+    .proxima-box .kicker{margin:0;color:var(--brand);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}
+    .proxima-box strong{display:block;font-size:19px;margin-top:3px}
+    .proxima-box span{display:block;color:var(--ink-soft);font-size:14px;margin-top:3px}
+    .acoes-secundarias{border-top:1px solid var(--line-soft);padding-top:12px;margin-top:14px}
     label{display:grid;gap:6px;font-weight:700;font-size:15px;margin-top:8px}
     input{width:100%;font:inherit;color:var(--ink);background:var(--surface);padding:14px;border:1px solid var(--field-line);border-radius:10px}
     input:focus{border-color:var(--action);outline:3px solid var(--focus);outline-offset:2px}
@@ -146,20 +156,40 @@
     <canvas id="signature" class="signature" width="900" height="330" aria-label="Espaço para assinar com o dedo"></canvas>
     <button type="button" class="secondary" id="limpar">Apagar e assinar de novo</button>
     <button type="button" id="confirmar">Confirmar assinatura</button>
+    <button type="button" class="secondary hidden" id="verificarAssinatura">Verificar se salvou</button>
     <p class="muted">A assinatura fica ligada a esta coleta, com nome, data e horário. É um comprovante da operação e não substitui documento fiscal.</p>
   </section>
 
+  <section class="card conclusao-card hidden" id="conclusaoCard">
+    <p class="conclusao-title">✓ Coleta concluída</p>
+    <div class="checklist">
+      <p id="checkColeta">✓ Coleta registrada</p>
+      <p id="checkAssinatura">✓ Assinatura registrada</p>
+      <p id="checkComprovante">✓ Comprovante pronto</p>
+    </div>
+    <div class="proxima-box hidden" id="proximaBox">
+      <p class="kicker" id="proximaTitulo">Próxima parada</p>
+      <strong id="proximaCliente"></strong>
+      <span id="proximaEndereco"></span>
+      <button type="button" id="irProxima">Ir para próxima coleta</button>
+    </div>
+    <button type="button" class="secondary hidden" id="voltarRotaConcluida">Ver rota completa</button>
+    <p class="muted" id="conclusaoNota"></p>
+  </section>
+
   <section class="card hidden" id="comprovanteCard">
-    <h2>Comprovante</h2>
+    <h2>Comprovante e envio</h2>
     <p class="ok" id="comprovanteResumo"></p>
     <div class="codigo-linha hidden" id="codigoLinha">
       <p class="codigo" id="codigoConclusao"></p>
       <button type="button" class="secondary" id="copiarCodigo">Copiar código</button>
     </div>
     <img id="comprovanteImg" class="comprovante" alt="Comprovante da coleta assinado">
-    <button type="button" id="enviarCliente">Enviar ao fabricante / cliente NS</button>
-    <button type="button" class="secondary" id="enviarTransportadora">Enviar à transportadora</button>
-    <a class="button secondary" id="baixarComprovante" download="comprovante.png">Salvar imagem do comprovante</a>
+    <div class="acoes-secundarias">
+      <button type="button" class="secondary" id="enviarCliente">Abrir WhatsApp do fabricante / cliente NS</button>
+      <button type="button" class="secondary" id="enviarTransportadora">Abrir WhatsApp da transportadora</button>
+      <a class="button secondary" id="baixarComprovante" download="comprovante.png">Salvar imagem do comprovante</a>
+    </div>
     <p class="muted" id="comprovanteHint"></p>
   </section>
 </main>
@@ -175,6 +205,14 @@ const config=window.SIGN_CONFIG||{};
 const query=new URLSearchParams(location.search);
 const token=query.get('t')||new URLSearchParams(location.hash.slice(1)).get('t');
 const veioDaRota=query.get('from')==='route';
+const routeId=query.get('rid')||'';
+const stopId=query.get('sid')||'';
+const routePos=Math.max(0,Number(query.get('rp'))||0);
+const routeTotal=Math.max(0,Number(query.get('rt'))||0);
+const ROTA_PROGRESSO='alex-rota-progresso-v1-';
+const ROTA_AVANCO='alex-rota-avanco-v1';
+const ROTA_ATIVA='alex-rota-ativa-v1-';
+const ROTA_RETORNO='alex-rota-retorno-v1-';
 const link=lerLink(location.hash);
 const demo=link?.modo==='demo'?link.dados:null;
 const direto=link?.modo==='direto'?link.dados:null;
@@ -218,6 +256,75 @@ function esc(v){return texto(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','
 function aviso(titulo,mensagem,classe=''){$('#title').textContent=titulo;$('#status').textContent=mensagem;$('#status').className=classe}
 function recado(mensagem,classe='ok'){$('#feedback').textContent=mensagem;$('#feedback').className=`feedback ${classe}`}
 
+function lerProgressoRota(){
+  if(!routeId)return {completed:{}};
+  try{
+    const salvo=JSON.parse(localStorage.getItem(ROTA_PROGRESSO+routeId)||'{}');
+    return salvo&&typeof salvo==='object'?{...salvo,completed:salvo.completed&&typeof salvo.completed==='object'?salvo.completed:{}}:{completed:{}};
+  }catch{return {completed:{}}}
+}
+function marcarParadaConcluida(){
+  if(!routeId||!stopId)return;
+  try{
+    const salvo=lerProgressoRota();
+    salvo.completed[stopId]=new Date().toISOString();
+    localStorage.setItem(ROTA_PROGRESSO+routeId,JSON.stringify(salvo));
+  }catch{}
+}
+function retornoDaRota(){
+  if(!routeId)return '';
+  try{
+    if(sessionStorage.getItem(ROTA_ATIVA+routeId)!=='1')return '';
+    const bruto=sessionStorage.getItem(ROTA_RETORNO+routeId)||'';
+    const u=new URL(bruto,location.href);
+    const base=new URL('./rota.html',location.href);
+    if(u.origin!==base.origin||u.pathname!==base.pathname||u.username||u.password)return '';
+    return u.href;
+  }catch{return ''}
+}
+function mostrarConclusao({comprovantePronto=true}={}){
+  marcarParadaConcluida();
+  $('#conclusaoCard').classList.remove('hidden');
+  $('#checkComprovante').textContent=comprovantePronto?'✓ Comprovante pronto':'Comprovante ainda não disponível';
+  $('#checkComprovante').classList.toggle('pending',!comprovantePronto);
+  $('#conclusaoNota').textContent=online
+    ?'A coleta já está salva. Compartilhar o comprovante é opcional e não bloqueia a próxima parada.'
+    :'A coleta está salva neste celular. Para atualizar o painel da transportadora, envie o código/comprovante quando puder; isso não bloqueia a próxima parada.';
+  if(veioDaRota&&routeTotal){
+    $('#proximaBox').classList.remove('hidden');
+    if(routePos&&routePos<routeTotal){
+      $('#proximaTitulo').textContent=`Próxima parada · ${routePos+1} de ${routeTotal}`;
+      $('#proximaCliente').textContent='A próxima coleta será aberta pela rota.';
+      $('#proximaEndereco').textContent='Você não precisa voltar e procurar a parada manualmente.';
+      $('#irProxima').classList.remove('hidden');
+      $('#irProxima').disabled=false;
+      $('#irProxima').textContent='Próxima coleta';
+    }else{
+      $('#proximaTitulo').textContent='Rota concluída';
+      $('#proximaCliente').textContent='Esta era a última parada da rota.';
+      $('#proximaEndereco').textContent='Você pode voltar à rota para revisar as coletas, se precisar.';
+      $('#irProxima').classList.add('hidden');
+    }
+  }else{
+    $('#proximaBox').classList.add('hidden');
+  }
+  $('#voltarRotaConcluida').classList.toggle('hidden',!veioDaRota);
+}
+function irParaProxima(){
+  const retorno=retornoDaRota();
+  if(!veioDaRota||!routeId||!stopId||!retorno){
+    recado('A coleta está concluída. Abra novamente o link da rota para continuar pelas paradas restantes.','error');
+    return;
+  }
+  try{sessionStorage.setItem(ROTA_AVANCO,JSON.stringify({routeId,afterId:stopId}))}catch{}
+  location.replace(retorno);
+}
+function voltarParaRota(){
+  const retorno=retornoDaRota();
+  if(retorno){location.replace(retorno);return}
+  voltarDaColeta();
+}
+
 /* A rota abre a coleta nesta mesma aba. Assim a seta do celular e este botão
    devolvem o motorista ao roteiro sem criar uma aba perdida. Se o link foi
    aberto diretamente pelo WhatsApp, o retorno natural é para a conversa ou
@@ -225,12 +332,18 @@ function recado(mensagem,classe='ok'){$('#feedback').textContent=mensagem;$('#fe
    confirmação para não apagar trabalho feito com o dedo. */
 function voltarDaColeta(){
   if(assinando&&!comprovanteAtual&&strokes.length&&!window.confirm('A assinatura ainda não foi confirmada. Sair e perder o que foi desenhado?'))return;
-  if(veioDaRota&&history.length>1){history.back();return;}
+  if(veioDaRota){
+    const retorno=retornoDaRota();
+    if(retorno){location.replace(retorno);return}
+    if(history.length>1){history.back();return}
+  }
   try{window.close()}catch{}
   recado('Se esta aba não fechar sozinha, use o botão fechar do navegador.','error');
 }
 $('#voltar').textContent=veioDaRota?'Voltar à rota':'Fechar coleta';
 $('#voltar').onclick=voltarDaColeta;
+$('#irProxima').onclick=irParaProxima;
+$('#voltarRotaConcluida').onclick=voltarParaRota;
 
 /* O token vai no corpo do pedido, nunca no endereço: assim ele não aparece
    em registro de servidor nem no histórico do celular. */
@@ -238,7 +351,7 @@ async function chamar(payload){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
   let r;
   try{r=await fetch(config.endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,...payload}),signal:controller.signal})}
-  catch(error){throw new Error(error.name==='AbortError'?'A base demorou a responder. Reabra este link para conferir se a operação foi registrada antes de tentar novamente.':'Sem conexão com a base. Confira a internet e tente novamente.')}
+  catch(error){throw new Error(error.name==='AbortError'?'Ainda não recebemos confirmação.':'Sem conexão agora.')}
   finally{clearTimeout(timer)}
   let d={};try{d=await r.json()}catch{}
   return{ok:r.ok,status:r.status,data:d};
@@ -254,9 +367,15 @@ function freightDescription(s){
   if(freight==='BOTH')return 'Flexível legado · duas opções de pagamento';
   return 'Não informado';
 }
+function hashLocal(valor){
+  let h=2166136261;for(const c of String(valor||'')){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}
+  return (h>>>0).toString(36);
+}
 function mostrar(s){
   dados=s;
-  localIdentity=JSON.stringify(s);
+  /* O token identifica a coleta online, mas não é persistido no navegador:
+     guardamos só uma impressão curta para reconhecer a mesma coleta após F5. */
+  localIdentity=online?`online:${hashLocal(token)}`:JSON.stringify(s);
   $('#statusBadge').textContent=`Situação: ${texto(s.status||'planejada')}`;
   $('#route').textContent=texto(s.sender)||'Cliente não informado';
   $('#destino').textContent=`Entregar para: ${texto(s.recipient)||'—'}`;
@@ -312,8 +431,28 @@ function marcarBotoes(){
   $('#statusBadge').textContent=`Situação: ${s}`;
 }
 
+async function reconciliarPasso(action){
+  if(!online)return null;
+  try{
+    const r=await chamar({action:'read'});
+    if(!r.ok)return null;
+    const resumo=r.data.summary||{};
+    const status=texto(resumo.status||r.data.status||dados?.status||'');
+    const feito=action==='start'
+      ?['em coleta','coletada','entregue'].includes(status)
+      :['coletada','entregue'].includes(status);
+    if(!feito)return false;
+    dados={...dados,...resumo,status};
+    marcarBotoes();
+    recado('Já estava registrado. Nenhuma ação foi duplicada.');
+    return true;
+  }catch{return null}
+}
+
 async function passo(action,botao){
+  const textoOriginal=botao.textContent;
   botao.disabled=true;
+  botao.textContent='Registrando…';
   if(direto){
     dados.status=action==='start'?'em coleta':'coletada';
     guardarLocal({status:dados.status});
@@ -329,13 +468,23 @@ async function passo(action,botao){
   }
   try{
     const r=await chamar({action});
-    if(!r.ok)throw new Error(r.data.error||'Não foi possível registrar.');
+    if(!r.ok){
+      botao.disabled=false;
+      botao.textContent=textoOriginal;
+      recado(r.data.error||'Não foi possível registrar essa ação. Tente novamente.','error');
+      return;
+    }
     dados.status=r.data.status||dados.status;
     marcarBotoes();
     recado(action==='start'?'Coleta iniciada. Pode carregar.':'Coleta conferida. Obrigado.');
-  }catch(err){
-    recado(err.message||'Sem conexão. Tente de novo.','error');
+  }catch{
+    const conferido=await reconciliarPasso(action);
+    if(conferido===true)return;
     botao.disabled=false;
+    botao.textContent=textoOriginal;
+    recado(conferido===false
+      ?'Essa ação ainda não estava registrada. Tente novamente.'
+      :'Não conseguimos confirmar agora. Nada foi apagado; tente novamente quando a conexão voltar.','error');
   }
 }
 
@@ -355,13 +504,7 @@ $('#confirmar').onclick=async e=>{
   const validos=strokes.filter(s=>s.length>=2);
   if(nome.length<2||nome.length>120||!validos.some(s=>s.some(p=>Math.hypot(p.x-s[0].x,p.y-s[0].y)>3))){recado('Escreva o nome (2 a 120 letras) e desenhe a assinatura no quadro antes de confirmar.','error');return}
   if(direto){
-    const assinadoEm=new Date();
-    const imagem=montarComprovante(dados,{nome,assinadoEm});
-    dados.status='coletada';
-    marcarBotoes();
-    const guardado=guardarLocal({status:'coletada',nome,assinadoEm:assinadoEm.toISOString(),imagem});
-    mostrarComprovante({nome,assinadoEm,imagem});
-    if(!guardado)recado('Não foi possível guardar neste celular. Salve a imagem do comprovante antes de fechar a página.','error');
+    concluirAssinatura({nome,assinadoEm:new Date(),vetor:validos,segura:true});
     return;
   }
   if(demo){
@@ -371,18 +514,22 @@ $('#confirmar').onclick=async e=>{
   const botao=e.currentTarget;botao.disabled=true;botao.textContent='Salvando…';
   try{
     const r=await chamar({action:'sign',signerName:nome,signatureStrokes:validos,snapshotHash});
-    if(!r.ok)throw new Error(r.data.error||'Não foi possível salvar.');
-    const assinadoEm=new Date(r.data.signedAt||Date.now());
-    const vetor=Array.isArray(r.data.signatureVector)?r.data.signatureVector:strokes;
-    const imagem=montarComprovante(dados,{nome:r.data.signerName||nome,assinadoEm});
-    $('#assinaturaCard').classList.add('hidden');
-    dados.status='coletada';marcarBotoes();
-    guardarLocal({status:'coletada',nome:r.data.signerName||nome,assinadoEm:assinadoEm.toISOString(),imagem,signatureVector:vetor});
-    mostrarComprovante({nome:r.data.signerName||nome,assinadoEm,imagem});
-    recado(`Assinatura confirmada. Obrigado, ${r.data.signerName||nome}.`);
-  }catch(err){
-    recado(err.message||'Não foi possível salvar. Tente novamente.','error');
-    botao.disabled=false;botao.textContent='Confirmar assinatura';
+    if(!r.ok){
+      botao.disabled=false;botao.textContent='Confirmar assinatura';
+      recado(r.data.error||'Não foi possível salvar a assinatura. Confira os dados e tente novamente.','error');
+      return;
+    }
+    concluirAssinatura({
+      nome:r.data.signerName||nome,
+      assinadoEm:new Date(r.data.signedAt||Date.now()),
+      vetor:Array.isArray(r.data.signatureVector)?r.data.signatureVector:validos,
+      segura:true,
+    });
+  }catch{
+    const confirmado=await verificarAssinaturaSalva();
+    if(confirmado===true)return;
+    if(confirmado===false)return;
+    botao.disabled=true;botao.textContent='Aguardando confirmação';
   }
 };
 
@@ -401,6 +548,18 @@ const chaveLocal=()=>{
 };
 function lerLocal(){try{const r=JSON.parse(localStorage.getItem(chaveLocal())||'{}');return r.identity===localIdentity?r:{}}catch{return{}}}
 function guardarLocal(parcial){try{localStorage.setItem(chaveLocal(),JSON.stringify({...lerLocal(),...parcial,identity:localIdentity}));return true}catch{recado(online?'A assinatura está na base, mas não coube uma cópia neste celular.':'Não foi possível guardar neste celular. Salve a imagem do comprovante antes de fechar a página.','error');return false}}
+function desenharVetor(vetor){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  strokes.length=0;
+  for(const stroke of Array.isArray(vetor)?vetor:[]){
+    if(!Array.isArray(stroke)||stroke.length<2)continue;
+    const copia=stroke.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+    strokes.push(copia);
+    ctx.beginPath();ctx.moveTo(copia[0].x,copia[0].y);
+    for(const p of copia.slice(1))ctx.lineTo(p.x,p.y);
+    ctx.stroke();
+  }
+}
 const codigoColeta=s=>String(s?.collectionNumber??'').padStart(4,'0');
 const dataHora=d=>`${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`;
 function desenharPix(g,payload,x,y,size){
@@ -496,7 +655,78 @@ function codigoConclusao(numero,quando){
   return `AT-${corpo}-${b36[soma%36]}`;
 }
 
-function mostrarComprovante({nome,assinadoEm,imagem}){
+function concluirAssinatura({nome,assinadoEm,vetor,recuperada=false,segura=true}){
+  if(Array.isArray(vetor)&&vetor.length)desenharVetor(vetor);
+  const imagem=montarComprovante(dados,{nome,assinadoEm});
+  dados.status='coletada';
+  marcarBotoes();
+  assinando=false;
+  const guardado=guardarLocal({
+    status:'coletada',
+    nome,
+    assinadoEm:assinadoEm.toISOString(),
+    imagem,
+    signatureVector:Array.isArray(vetor)?vetor:strokes,
+  });
+  mostrarComprovante({nome,assinadoEm,imagem,conclusaoSegura:segura&&(online||guardado)});
+  $('#verificarAssinatura').classList.add('hidden');
+  if(recuperada)recado('A coleta já estava concluída. Confirmamos o registro e nenhuma assinatura foi duplicada.');
+  return online||guardado;
+}
+
+function aplicarLeituraAssinada(r,{recuperada=false}={}){
+  if(!r?.ok||r.data?.state!=='signed')return false;
+  if(r.data.summary)mostrar(r.data.summary);
+  const proof=r.data.proof;
+  if(proof?.signatureVector&&proof.signerName&&proof.signedAt){
+    concluirAssinatura({
+      nome:proof.signerName,
+      assinadoEm:new Date(proof.signedAt),
+      vetor:proof.signatureVector,
+      recuperada,
+      segura:true,
+    });
+    return true;
+  }
+  dados.status='coletada';marcarBotoes();
+  assinando=false;
+  $('#assinaturaCard').classList.add('hidden');
+  $('#abrirAssinatura').classList.add('hidden');
+  mostrarConclusao({comprovantePronto:false});
+  recado('A assinatura já está registrada. O comprovante não ficou disponível agora, mas a coleta não precisa ser refeita.','error');
+  return true;
+}
+
+async function verificarAssinaturaSalva(){
+  if(!online)return false;
+  const botao=$('#verificarAssinatura');
+  botao.classList.remove('hidden');
+  botao.disabled=true;
+  botao.textContent='Verificando…';
+  try{
+    const r=await chamar({action:'read'});
+    if(!r.ok)throw new Error(r.data.error||'sem resposta');
+    if(aplicarLeituraAssinada(r,{recuperada:true}))return true;
+    snapshotHash=typeof r.data.snapshotHash==='string'?r.data.snapshotHash:snapshotHash;
+    if(r.data.summary)mostrar(r.data.summary);
+    botao.classList.add('hidden');
+    $('#confirmar').disabled=false;
+    $('#confirmar').textContent='Confirmar assinatura';
+    recado('A assinatura ainda não estava salva. Ela continua nesta tela; agora você pode confirmar novamente.','error');
+    return false;
+  }catch{
+    $('#confirmar').disabled=true;
+    $('#confirmar').textContent='Aguardando confirmação';
+    botao.classList.remove('hidden');
+    recado('Ainda não conseguimos confirmar se salvou. Sua assinatura continua nesta tela. Quando a conexão voltar, toque em “Verificar se salvou”.','error');
+    return null;
+  }finally{
+    botao.disabled=false;
+    botao.textContent='Verificar se salvou';
+  }
+}
+
+function mostrarComprovante({nome,assinadoEm,imagem,conclusaoSegura=true}){
   comprovanteAtual={nome,assinadoEm,imagem};
   $('#assinaturaCard').classList.add('hidden');
   $('#abrirAssinatura').classList.add('hidden');
@@ -510,10 +740,17 @@ function mostrarComprovante({nome,assinadoEm,imagem}){
   $('#baixarComprovante').href=imagem;
   $('#baixarComprovante').download=`comprovante-coleta-${codigoColeta(dados)}.png`;
   $('#comprovanteHint').textContent=online
-    ?'Assinatura salva na base online. O painel conectado confere as assinaturas a cada 30 segundos. Não precisa enviar código. Para enviar uma imagem pelo WhatsApp, salve-a e anexe na conversa.'
-    :'Este link é local: envie o comprovante e o código à transportadora para atualizar o painel. Salve a imagem e anexe na conversa do WhatsApp.';
-  recado(online?'Assinatura registrada na base online. Não é necessário copiar código.':'Assinatura registrada neste celular. Envie o comprovante à transportadora.');
-  $('#comprovanteCard').scrollIntoView({behavior:'smooth',block:'start'});
+    ?'A coleta já está registrada. Se quiser compartilhar a imagem, abra o WhatsApp e confirme o envio na conversa.'
+    :'O comprovante ficou salvo neste celular. O WhatsApp é uma etapa separada: abra a conversa e confirme o envio quando puder.';
+  if(conclusaoSegura){
+    mostrarConclusao({comprovantePronto:true});
+    recado(online?'Coleta concluída e assinatura registrada.':'Coleta concluída neste celular. O envio à transportadora pode ser feito agora ou depois.');
+    $('#conclusaoCard').scrollIntoView({behavior:'smooth',block:'start'});
+  }else{
+    $('#conclusaoCard').classList.add('hidden');
+    recado('O comprovante está na tela, mas ainda não ficou guardado com segurança. Salve a imagem antes de sair desta coleta.','error');
+    $('#comprovanteCard').scrollIntoView({behavior:'smooth',block:'start'});
+  }
 }
 
 async function copiarCodigo(){
@@ -573,6 +810,7 @@ async function enviarComprovante(paraCliente){
 $('#enviarCliente').onclick=()=>enviarComprovante(true);
 $('#enviarTransportadora').onclick=()=>enviarComprovante(false);
 $('#copiarCodigo').onclick=copiarCodigo;
+$('#verificarAssinatura').onclick=verificarAssinaturaSalva;
 
 /* ------------------------------------------------------------------ abrir */
 async function abrir(){
@@ -595,36 +833,29 @@ async function abrir(){
     aviso('Link não configurado','Peça um link novo à transportadora. A parte online ainda não foi ativada.','error');
     return;
   }
-  /* O link sai da barra de endereços assim que a página abre: ele vale para
-     esta coleta e não precisa ficar exposto em foto de tela. */
-  history.replaceState(null,'',`${location.pathname}#t=${encodeURIComponent(token)}`);
+  /* O token sai da query e fica no fragmento, que não vai ao servidor.
+     Só metadados não secretos da posição na rota permanecem na query. */
+  const rotaQuery=new URLSearchParams();
+  if(veioDaRota)rotaQuery.set('from','route');
+  if(routeId)rotaQuery.set('rid',routeId);
+  if(stopId)rotaQuery.set('sid',stopId);
+  if(routePos)rotaQuery.set('rp',String(routePos));
+  if(routeTotal)rotaQuery.set('rt',String(routeTotal));
+  const busca=rotaQuery.toString();
+  history.replaceState(null,'',`${location.pathname}${busca?`?${busca}`:''}#t=${encodeURIComponent(token)}`);
   let r;
-  try{r=await chamar({action:'read'})}catch{aviso('Sem conexão','Confira a internet do celular e abra o link de novo.','error');return}
+  try{r=await chamar({action:'read'})}catch{
+    aviso('Sem conexão','Nada foi apagado. Quando a internet voltar, abra este mesmo link novamente; se a coleta já tiver sido salva, ela aparecerá como concluída.','error');
+    return;
+  }
   if(!r.ok){aviso('Link indisponível',r.data.error||'Peça um link novo à transportadora.','error');return}
   if(r.data.purpose!=='coleta'){aviso('Link de outra etapa','Este link é da entrega. Abra a página de assinatura da entrega.','error');return}
   aviso('Coleta','Confira os dados antes de carregar.');
   snapshotHash=typeof r.data.snapshotHash==='string'?r.data.snapshotHash:null;
   mostrar(r.data.summary||{});
   if(r.data.state==='signed'){
-    $('#iniciar').disabled=true;$('#conferida').disabled=true;
-    $('#abrirAssinatura').classList.add('hidden');
-    const proof=r.data.proof;
-    if(proof?.signatureVector&&proof.signerName&&proof.signedAt){
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      for(const stroke of proof.signatureVector){
-        if(!Array.isArray(stroke)||stroke.length<2)continue;
-        ctx.beginPath();ctx.moveTo(stroke[0].x,stroke[0].y);
-        for(const p of stroke.slice(1))ctx.lineTo(p.x,p.y);
-        ctx.stroke();
-      }
-      const assinadoEm=new Date(proof.signedAt),nome=proof.signerName;
-      const imagem=montarComprovante(dados,{nome,assinadoEm});
-      mostrarComprovante({nome,assinadoEm,imagem});
-    }else{
-      const salvo=lerLocal();
-      if(salvo.imagem)mostrarComprovante({nome:salvo.nome,assinadoEm:new Date(salvo.assinadoEm),imagem:salvo.imagem});
-      else recado('Assinatura já registrada na base. O comprovante não está disponível nesta versão do serviço; peça à transportadora a notinha assinada.','error');
-    }
+    aplicarLeituraAssinada(r);
+    return;
   }
 }
 abrir();
