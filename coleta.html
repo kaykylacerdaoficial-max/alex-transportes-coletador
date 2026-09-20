@@ -407,9 +407,9 @@ function desenharPix(g,payload,x,y,size){
 
 function montarComprovante(s,{nome,assinadoEm}){
   const W=1080,M=60,LINHA=46,itens=s.items||[];
-  const pix=s.payment?.side==='NS'&&s.payment?.payload?s.payment:null;
+  const pixOptions=Array.isArray(s.payments)&&s.payments.length?s.payments:(s.payment?[s.payment]:[]);
   const c=document.createElement('canvas');
-  c.width=W;c.height=1080+itens.length*LINHA+(pix?340:0);
+  c.width=W;c.height=1080+itens.length*LINHA+(pixOptions.length?470:0);
   const g=c.getContext('2d');
   g.fillStyle='#FFFFFF';g.fillRect(0,0,W,c.height);
   g.fillStyle='#13462F';g.fillRect(0,0,W,120);
@@ -432,7 +432,8 @@ function montarComprovante(s,{nome,assinadoEm}){
   }
   y+=10;
   escrever(`Volumes: ${texto(s.volumes??0)}   Pares: ${texto(s.pairs??0)}   Total: ${money(s.total)}`,30,'bold');
-  escrever(`Frete a receber em ${s.freight==='NS'?'Nova Serrana':'São Paulo'}`,28,'','#4A5C68');
+  const freightLabel=s.freight==='NS'?'Nova Serrana':s.freight==='SP'?'São Paulo':'Ambos — escolha uma conta';
+  escrever(`Frete a receber em ${freightLabel}`,28,'','#4A5C68');
   /* A assinatura entra sem distorcer: cabe na caixa mantendo a proporção. */
   const box={x:M,y:y+4,w:W-2*M,h:230};
   g.strokeStyle='#6E9380';g.setLineDash([10,8]);g.strokeRect(box.x,box.y,box.w,box.h);g.setLineDash([]);
@@ -441,16 +442,32 @@ function montarComprovante(s,{nome,assinadoEm}){
   g.drawImage(canvas,box.x+(box.w-lw)/2,box.y+(box.h-lh)/2,lw,lh);
   y=box.y+box.h+56;
   escrever(`Assinado por: ${nome}`,32,'bold');
-  if(pix){
+  if(pixOptions.length){
     y+=10;
-    const qrSize=230,qrX=M,qrY=y;
-    if(desenharPix(g,pix.payload,qrX,qrY,qrSize)){
-      g.fillStyle='#17252F';g.font='bold 30px Arial';g.fillText('Pagar frete por Pix',qrX+qrSize+42,qrY+52);
-      g.font='28px Arial';g.fillText(money(pix.amount||s.total),qrX+qrSize+42,qrY+98);
-      g.fillStyle='#4A5C68';g.font='24px Arial';g.fillText(`Recebedor: ${texto(pix.merchant)||'Alex Transportes'}`.slice(0,45),qrX+qrSize+42,qrY+142);
-      g.fillText('Escaneie no aplicativo do banco.',qrX+qrSize+42,qrY+184);
-      y=qrY+qrSize+40;
+    if(s.paymentChooseOne&&pixOptions.length>1){
+      g.fillStyle='#13462F';g.font='bold 27px Arial';
+      g.fillText('PAGUE APENAS UM DOS DOIS QRs ABAIXO',M,y+28);
+      g.fillStyle='#4A5C68';g.font='22px Arial';
+      g.fillText('Eles são alternativas para o mesmo frete. Se já pagou, não pague novamente.',M,y+62);
+      y+=88;
     }
+    const qrSize=pixOptions.length>1?200:230;
+    const colW=(W-2*M)/pixOptions.length;
+    const qrY=y;
+    pixOptions.forEach((pix,index)=>{
+      if(!pix?.payload)return;
+      const qrX=M+index*colW+(colW-qrSize)/2;
+      if(!desenharPix(g,pix.payload,qrX,qrY,qrSize))return;
+      const centro=qrX+qrSize/2;
+      g.textAlign='center';
+      g.fillStyle='#17252F';g.font='bold 25px Arial';
+      g.fillText(pix.side==='NS'?'Pix Nova Serrana':'Pix São Paulo',centro,qrY+qrSize+34);
+      g.font='23px Arial';g.fillText(money(pix.amount||s.total),centro,qrY+qrSize+66);
+      g.fillStyle='#4A5C68';g.font='20px Arial';
+      g.fillText(`TXID ${texto(pix.txid)||''}`.slice(0,32),centro,qrY+qrSize+96);
+      g.textAlign='left';
+    });
+    y=qrY+qrSize+126;
   }
   escrever('Comprovante operacional da coleta. Não substitui documento fiscal.',24,'','#5E7080');
   return c.toDataURL('image/png');
