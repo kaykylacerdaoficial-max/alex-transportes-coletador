@@ -244,6 +244,16 @@ async function chamar(payload){
   return{ok:r.ok,status:r.status,data:d};
 }
 
+function freightDescription(s){
+  const freight=String(s?.freight||'').toUpperCase();
+  const side=String(s?.paymentSide||'').toUpperCase();
+  if(freight==='NS')return 'Nova Serrana · Inter';
+  if(freight==='SP')return 'São Paulo · Bradesco';
+  if(freight==='BOTH'&&side==='NS')return 'Flexível · cobrar nesta coleta em Nova Serrana · Inter';
+  if(freight==='BOTH'&&side==='SP')return 'Flexível · cobrar nesta coleta em São Paulo · Bradesco';
+  if(freight==='BOTH')return 'Flexível legado · duas opções de pagamento';
+  return 'Não informado';
+}
 function mostrar(s){
   dados=s;
   localIdentity=JSON.stringify(s);
@@ -281,7 +291,7 @@ function mostrar(s){
   ).join('')||'<p class="muted">Sem itens lançados.</p>';
   $('#volumes').textContent=texto(s.volumes??0);
   $('#pares').textContent=texto(s.pairs??0);
-  $('#freight').textContent=s.freight==='NS'?'Nova Serrana':'São Paulo';
+  $('#freight').textContent=freightDescription(s);
   if(s.observation){$('#observation').textContent=`Observação: ${texto(s.observation)}`;$('#observation').classList.remove('hidden')}
   $('#mercadoria').classList.remove('hidden');
   $('#acoes').classList.remove('hidden');
@@ -432,8 +442,7 @@ function montarComprovante(s,{nome,assinadoEm}){
   }
   y+=10;
   escrever(`Volumes: ${texto(s.volumes??0)}   Pares: ${texto(s.pairs??0)}   Total: ${money(s.total)}`,30,'bold');
-  const freightLabel=s.freight==='NS'?'Nova Serrana':s.freight==='SP'?'São Paulo':'Ambos — escolha uma conta';
-  escrever(`Frete a receber em ${freightLabel}`,28,'','#4A5C68');
+  escrever(`Frete: ${freightDescription(s)}`,28,'','#4A5C68');
   /* A assinatura entra sem distorcer: cabe na caixa mantendo a proporção. */
   const box={x:M,y:y+4,w:W-2*M,h:230};
   g.strokeStyle='#6E9380';g.setLineDash([10,8]);g.strokeRect(box.x,box.y,box.w,box.h);g.setLineDash([]);

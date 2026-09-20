@@ -101,6 +101,16 @@ canvas.addEventListener('pointermove',e=>{if(!drawing)return;const p=point(e);cu
 $('#clear').onclick=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);signed=false;strokes.length=0};
 function money(v){return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)||0)}
 function texto(v){return String(v??'')}
+function freightDescription(s){
+  const freight=String(s?.freight||'').toUpperCase();
+  const side=String(s?.paymentSide||'').toUpperCase();
+  if(freight==='NS')return 'Nova Serrana · Inter';
+  if(freight==='SP')return 'São Paulo · Bradesco';
+  if(freight==='BOTH'&&side==='NS')return 'Flexível · cobrar nesta coleta em Nova Serrana · Inter';
+  if(freight==='BOTH'&&side==='SP')return 'Flexível · cobrar nesta coleta em São Paulo · Bradesco';
+  if(freight==='BOTH')return 'Flexível legado · duas opções de pagamento';
+  return 'Não informado';
+}
 /* Texto que vira HTML passa por aqui antes: dado nunca vira marcação. */
 function esc(v){return texto(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function aviso(titulo,mensagem,classe){$('#title').textContent=titulo;$('#status').textContent=mensagem;$('#status').className=classe}
@@ -174,8 +184,7 @@ async function load(){
   $('#reference').textContent=`Coleta #${String(s.collectionNumber??'—').padStart(4,'0')}${s.date?` · ${new Date(`${s.date}T12:00:00`).toLocaleDateString('pt-BR')}`:''}${s.noteNumber?` · Notinha ${texto(s.noteNumber)}`:''}`;
   $('#items').innerHTML=s.items.map(i=>`<div class="item"><span>${esc(i.qty)} ${esc(i.unit)} · ${esc(i.product)}${i.pairs?` · ${esc(i.pairs)} pares`:''}</span><strong>${esc(money(i.total))}</strong></div>`).join('');
   $('#grandTotal').textContent=money(s.items.reduce((t,i)=>t+(Number(i.total)||0),0));
-  const freightLabel=s.freight==='NS'?'Nova Serrana':s.freight==='SP'?'São Paulo':'Ambos (escolha uma conta)';
-  $('#freight').textContent=`Frete recebido em: ${freightLabel}`;
+  $('#freight').textContent=`Frete: ${freightDescription(s)}`;
   if(s.observation){$('#observation').textContent=`Observação: ${texto(s.observation)}`;$('#observation').classList.remove('hidden')}
   $('#summary').classList.remove('hidden');$('#form').classList.remove('hidden');
 }
